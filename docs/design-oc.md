@@ -21,8 +21,9 @@
   - [5.1 Deploy Script（部署脚本）](#51-deploy-script部署脚本)
   - [5.2 Docker Compose（容器编排）](#52-docker-compose容器编排)
   - [5.3 Caddy（反向代理 + HTTPS）](#53-caddy反向代理--https)
-  - [5.4 Authelia（认证网关）](#54-authelia认证网关)
-  - [5.5 OpenCode（AI 编程助手）](#55-opencodeai-编程助手)
+  - [5.4 环境变量](#54-环境变量)
+  - [5.5 Authelia（认证网关）](#55-authelia认证网关)
+  - [5.6 OpenCode（AI 编程助手）](#56-opencodeai-编程助手)
 - [6. 用户体验流程](#6-用户体验流程)
   - [6.1 部署流程](#61-部署流程)
   - [6.2 首次登录（注册 Passkey）](#62-首次登录注册-passkey)
@@ -119,7 +120,8 @@
 |  |  |                    Docker Volumes                           |  |  |
 |  |  |  • opencode-workspace (工作区持久化)                         |  |  |
 |  |  |  • caddy_data (SSL 证书)                                    |  |  |
-|  |  |  • authelia_data (用户/Passkey 注册信息)                    |  |  |
+|  |  |  配置文件 (bind mount):                                      |  |  |
+|  |  |  • ./authelia (Authelia 配置及运行时数据)                    |  |  |
 |  |  +------------------------------------------------------------+  |  |
 |  +----------------------------------------------------------------+  |
 +----------------------------------------------------------------------+
@@ -282,11 +284,15 @@ nip.io 是公共域名服务，所有用户共享 Let's Encrypt 的速率限制�
 |  +----------------------------------------------------------------+  |
 |  |  Storage Layer (存储层)                                       |  |
 |  |  +----------------------------------------------------------+  |  |
-|  |  |  Docker Volumes                                           |  |  |
+|  |  |  Named Volumes (运行时数据):                              |  |  |
 |  |  |  • opencode-workspace: 工作区文件                         |  |  |
 |  |  |  • opencode-config: OpenCode 配置                         |  |  |
-|  |  |  • authelia-data: 用户/Passkey 信息                       |  |  |
 |  |  |  • caddy-data: SSL 证书                                    |  |  |
+|  |  +----------------------------------------------------------+  |  |
+|  |  +----------------------------------------------------------+  |  |
+|  |  |  Bind Mounts (配置文件，部署时预填充):                     |  |  |
+|  |  |  • ./authelia: Authelia 配置 + db.sqlite3                |  |  |
+|  |  |  • ./Caddyfile: Caddy 配置                                |  |  |
 |  |  +----------------------------------------------------------+  |  |
 |  +----------------------------------------------------------------+  |
 +----------------------------------------------------------------------+
@@ -406,13 +412,14 @@ cloudcode/
 ├── templates/
 │   ├── docker-compose.yml.j2 # Docker Compose 模板
 │   ├── Caddyfile.j2          # Caddy 配置模板
+│   ├── env.j2                # 环境变量模板 (API Key 等，敏感)
 │   ├── authelia/
 │   │   ├── config.yml.j2     # Authelia 主配置
 │   │   └── users_database.yml.j2  # 用户数据库
 │   └── Dockerfile.opencode   # OpenCode 镜像构建
 ├── state/
 │   └── state.json            # 部署状态文件 (应加入 .gitignore)
-└── .gitignore                # 忽略敏感文件
+└── .gitignore                # 忽略敏感文件 (state/, .env 等)
 ```
 
 #### 5.1.2 核心函数
@@ -433,6 +440,7 @@ destroy_all_resources()       # 释放所有资源
 install_docker()              # 安装 Docker
 deploy_compose()              # 部署 Docker Compose 栈
 configure_authelia()          # 配置 Authelia 用户
+render_env_file()             # 渲染 .env 文件 (包含 API Key)
 
 # lib/utils.sh
 log_info()                    # 信息日志
@@ -441,6 +449,7 @@ confirm()                     # 交互确认
 save_state()                  # 保存部署状态
 load_state()                  # 读取部署状态
 generate_session_secret()     # 生成 Authelia session secret
+generate_storage_encryption_key()  # 生成 Authelia storage encryption key
 hash_password()               # 生成 Argon2id 密码哈希
 ```
 
@@ -459,6 +468,7 @@ hash_password()               # 生成 Argon2id 密码哈希
     "ecs": {
       "id": "i-xxx",
       "instance_type": "ecs.e-c1m2.large",
+      "system_disk_size": 60,
       "public_ip": "47.x.x.x",
       "private_ip": "192.168.1.100"
     },
@@ -487,6 +497,43 @@ hash_password()               # 生成 Argon2id 密码哈希
 ~/.ssh/cloudcode          # 私钥 (chmod 600)
 ~/.ssh/cloudcode.pub      # 公钥
 ```
+
+#### 5.1.5 幂等性与失败回滚
+
+**幂等性策略：**
+
+`check_existing_resources()` 会检测 `state.json` 中记录的资源是否已存在：
+
+| 场景 | 行为 |
+|------|------|
+| `state.json` 不存在 | 首次部署，从零创建所有资源 |
+| `state.json` 存在，资源完整 | 检测到已部署，提示用户使用 `--force` 重新部署 |
+| `state.json` 存在，部分资源缺失 | 中断恢复模式，只创建缺失的资源 |
+
+**失败回滚策略：**
+
+部署脚本采用"检测-创建-记录"模式，每创建一个资源就更新 `state.json`：
+
+```
+create_vpc()    → 记录 vpc.id
+create_vswitch() → 记录 vswitch.id
+create_security_group() → 记录 sg.id
+create_ecs()    → 记录 ecs.id
+...
+```
+
+如果中途失败：
+
+1. 查看错误信息，确认失败原因
+2. 修复问题后重新执行 `./deploy.sh`，脚本会从断点继续
+3. 如需完全重置，先执行 `./destroy.sh` 清理所有资源
+
+**.env 文件安全：**
+
+`.env` 文件包含 API Key 等敏感信息：
+- 部署时从模板渲染，通过 scp 传输到 ECS
+- 应加入 `.gitignore`，不要提交到版本控制
+- ECS 上文件权限设为 600
 
 ### 5.2 Docker Compose（容器编排）
 
@@ -537,7 +584,6 @@ services:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
     expose:
       - 4096
-    command: ["opencode", "web", "--hostname", "0.0.0.0", "--port", "4096"]
     networks:
       - cloudcode-net
 
@@ -557,40 +603,50 @@ networks:
 ```caddyfile
 # Caddyfile.j2
 {{ domain }} {
-    # Authelia 认证网关
-    forward_auth authelia:9091 {
-        uri /api/verify?rd=https://{{ domain }}/auth
-        copy_headers Remote-User Remote-Groups Remote-Name Remote-Email
+    # 重定向 /auth 到 /auth/ (handle_path /auth/* 不匹配无尾部斜杠的情况)
+    redir /auth /auth/ 301
+
+    # Authelia 登录页面路由 (handle_path 自动剥离 /auth 前缀)
+    handle_path /auth/* {
+        reverse_proxy authelia:9091
     }
 
-    # 认证通过后转发到 OpenCode
-    reverse_proxy opencode:4096 {
-        header_up Host {host}
-        header_up X-Real-IP {remote_host}
-        header_up X-Forwarded-For {remote_host}
-        header_up X-Forwarded-Proto {scheme}
+    # 主应用路由（需认证）
+    handle {
+        # Authelia forward auth (Authelia 4.38+ 端点)
+        forward_auth authelia:9091 {
+            uri /api/authz/forward-auth
+            copy_headers Remote-User Remote-Groups Remote-Name Remote-Email
+        }
+
+        # 认证通过后转发到 OpenCode (Caddy 自动设置 X-Forwarded-* 头部)
+        reverse_proxy opencode:4096
     }
 
     log {
-        output file /var/log/caddy/access.log
-    }
-}
-
-{{ domain }} {
-    # Authelia 登录页面路由
-    handle /auth/* {
-        reverse_proxy authelia:9091
+        output stdout
+        format console
     }
 }
 ```
 
-### 5.4 Authelia（认证网关）
+### 5.4 环境变量
+
+```bash
+# env.j2
+OPENAI_API_KEY={{ openai_api_key }}
+OPENAI_BASE_URL={{ openai_base_url }}
+ANTHROPIC_API_KEY={{ anthropic_api_key }}
+```
+
+**安全提醒**：此文件包含 API Key，部署时渲染后 scp 到 ECS，不要提交到版本控制。
+
+### 5.5 Authelia（认证网关）
 
 ```yaml
 # authelia/config.yml.j2 (Authelia 4.38+ 格式)
 server:
-  host: 0.0.0.0
-  port: 9091
+  address: 'tcp://0.0.0.0:9091/'
 
 log:
   level: info
@@ -612,10 +668,12 @@ session:
   inactivity: 30m
   cookies:
     - domain: {{ domain }}
+      authelia_url: https://{{ domain }}/auth
       name: authelia_session
       same_site: lax
 
 storage:
+  encryption_key: {{ storage_encryption_key }}
   local:
     path: /config/db.sqlite3
 
@@ -633,8 +691,14 @@ totp:
   skew: 1
 
 access_control:
-  default_policy: two_factor
+  default_policy: deny
   rules:
+    # 豁免 Authelia 自身路径，避免死循环
+    - domain: {{ domain }}
+      resources:
+        - '^/auth([/?].*)?$'
+      policy: bypass
+    # 主应用需要两步认证
     - domain: {{ domain }}
       policy: two_factor
 
@@ -654,7 +718,7 @@ users:
       - admins
 ```
 
-### 5.5 OpenCode（AI 编程助手）
+### 5.6 OpenCode（AI 编程助手）
 
 ```dockerfile
 # Dockerfile.opencode
@@ -662,6 +726,7 @@ FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
+# 基础依赖
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     ca-certificates \
@@ -674,6 +739,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-pip \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
+
+# 可选: Go 开发环境（如需在容器内编译 Go 项目，取消下方注释）
+# RUN apt-get update && apt-get install -y --no-install-recommends golang-go && rm -rf /var/lib/apt/lists/*
 
 RUN useradd -m -s /bin/bash opencode \
     && echo "opencode ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/opencode \
@@ -914,9 +982,10 @@ Step 4: 进入应用
 | 资源项 | 规格 | 单价 | 月费用 (USD) | 备注 |
 |--------|------|------|-------------|------|
 | ECS | ecs.e-c1m2.large (2C4G) | ~$0.02/h | ~$15 | 新加坡地域，Ubuntu 24.04 |
+| 系统盘 | ESSD 60GB | ~$0.05/GB | ~$3 | 云盘费用 |
 | EIP | 1Mbps 带宽 | ~$0.003/h | ~$2 | 按带宽计费 |
 | 流量 | 按量 | $0.8/GB | ~$2 | 预估 2.5GB |
-| **总计** | | | **~$19/月** | **约 ¥140/月** |
+| **总计** | | | **~$22/月** | **约 ¥160/月** |
 
 ### 成本优化建议
 
@@ -930,9 +999,9 @@ Step 4: 进入应用
 
 | 方案 | 月费用 | HTTPS | 两步认证 | 运维复杂度 |
 |------|--------|-------|---------|-----------|
-| **cloudcode (本方案)** | ~$19 | ✅ 自动 | ✅ | 中 |
+| **cloudcode (本方案)** | ~$22 | ✅ 自动 | ✅ | 中 |
 | SAE 托管 | ~$110 | ✅ 自动 | 需额外配置 | 低 |
-| 原设计（无认证） | ~$15 | ❌ 无 | ❌ | 中 |
+| 原设计（无认证） | ~$18 | ❌ 无 | ❌ | 中 |
 
 ---
 
@@ -990,6 +1059,10 @@ cloudcode/
 | Passkey 验证（2FA） | 使用 Passkey 验证 | 登录成功进入 OpenCode |
 | OpenCode 功能 | 在 Web UI 中使用 AI 对话 | 正常响应 |
 | 清理脚本 | 执行 `./destroy.sh` | 所有资源释放，账单停止 |
+| 重复部署 | 已部署后再次执行 `./deploy.sh` | 幂等处理，不重复创建资源 |
+| 部署中断恢复 | 中途 Ctrl+C 后再次执行 | 能检测已有资源并继续 |
+| Session 过期 | 等待 30 分钟不操作 | 自动跳转到登录页 |
+| 密码重置 | 查看 notification.txt 获取重置链接 | 能成功重置密码 |
 
 ---
 
@@ -997,14 +1070,14 @@ cloudcode/
 
 ### 9.1 数据备份策略
 
-Docker Volume 中存储了重要数据，建议定期备份：
+Docker Volume 和宿主机目录中存储了重要数据，建议定期备份：
 
-| 数据 | 存储位置 | 备份方式 | 频率 |
-|------|----------|----------|------|
-| 工作区文件 | opencode_workspace | ECS 快照 / rsync | 每周 |
-| OpenCode 配置 | opencode_config | ECS 快照 | 每周 |
-| Authelia 用户数据 | authelia_data | ECS 快照 | 每月 |
-| SSL 证书 | caddy_data | 自动续期 | 无需备份 |
+| 数据 | 存储位置 | 类型 | 备份方式 | 频率 |
+|------|----------|------|----------|------|
+| 工作区文件 | opencode_workspace | Named Volume | ECS 快照 / rsync | 每周 |
+| OpenCode 配置 | opencode_config | Named Volume | ECS 快照 | 每周 |
+| Authelia 配置及用户数据 | ./authelia/ | Bind Mount | ECS 快照 / tar | 每月 |
+| SSL 证书 | caddy_data | Named Volume | 自动续期 | 无需备份 |
 
 **备份命令示例：**
 
@@ -1015,18 +1088,37 @@ docker run --rm \
   -v $(pwd)/backup:/backup \
   alpine tar czf /backup/workspace-$(date +%Y%m%d).tar.gz /data
 
-# 或使用阿里云 ECS 快照
-aliyun ecs CreateSnapshot --InstanceId i-xxx --SnapshotName "cloudcode-backup-$(date +%Y%m%d)"
+# 或使用阿里云 ECS 快照 (需要先查询磁盘 ID)
+# aliyun ecs DescribeDisks --InstanceId i-xxx --query 'Disks.Disk[*].DiskId' --output text
+aliyun ecs CreateSnapshot --DiskId d-xxx --SnapshotName "cloudcode-backup-$(date +%Y%m%d)"
 ```
 
 ### 9.2 常见运维任务
 
 | 任务 | 命令 |
 |------|------|
-| 查看日志 | `docker logs opencode` |
+| 查看日志 | `docker logs opencode` / `docker logs authelia` / `docker logs caddy` |
 | 重启服务 | `docker compose restart` |
 | 更新 OpenCode | `docker compose build opencode && docker compose up -d opencode` |
 | 查看 SSL 证书状态 | `docker exec caddy caddy list-certs` |
+
+**密码重置流程：**
+
+Authelia 使用文件系统通知器，密码重置链接会写入 `/config/notification.txt`：
+
+```bash
+# SSH 到 ECS 后查看重置链接
+cat ~/cloudcode/authelia/notification.txt
+
+# 输出示例:
+# Date: 2026-02-14 12:00:00
+# Recipient: admin
+# Link: https://your-domain/auth/reset-password/identity/verify?token=xxx
+
+# 访问链接后可重置密码
+```
+
+**注意**：重置密码后需要重新注册 Passkey（如果之前注册过）。
 
 ### 9.3 故障恢复
 
@@ -1066,8 +1158,15 @@ aliyun ecs CreateSnapshot --InstanceId i-xxx --SnapshotName "cloudcode-backup-$(
 
 ---
 
-**文档版本**: 1.1  
+**文档版本**: 1.8  
 **更新日期**: 2026-02-14
 
 **修订记录**：
-- v1.1: 修正 Authelia Passkey 为 2FA（非一级认证）；补充 80 端口；修正 Caddyfile 语法；补充 SSH 密钥管理、ECS 镜像、备份策略；移除 Docker-in-Docker 决策理由；更新 Authelia 配置格式为 4.38+ 版本
+- v1.8: 补充 env.j2 模板内容（新增 5.4 环境变量章节）；修正成本估算（增加系统盘费用 $3，总计 ~$22/月）
+- v1.7: 补充 env.j2 模板和 render_env_file() 函数；补充 ECS 系统盘大小配置 (60GB)；新增 5.1.5 幂等性与失败回滚章节；简化 Caddy reverse_proxy 配置（移除冗余 header_up）；补充密码重置流程说明；补充边界测试场景
+- v1.6: Authelia 改用 bind mount (./authelia:/config)，便于部署时预填充配置文件；明确区分 Named Volumes（运行时数据）和 Bind Mounts（配置文件）；修正总体设计图存储描述
+- v1.5: 修正 Docker Compose command 与 ENTRYPOINT 冲突；Authelia 添加 storage.encryption_key；Caddyfile 添加 /auth 重定向；统一 authelia 存储描述为 named volume (authelia_config)
+- v1.4: Caddyfile /auth/* 路由改用 handle_path 自动剥离前缀；修正 ECS 快照 API 参数为 --DiskId
+- v1.3: 修正 Authelia 4.38+ 配置：server.address 格式、session.cookies.authelia_url、access_control bypass 自身路径；Caddy 日志改为 stdout；Dockerfile 注释说明 golang-go 可选安装
+- v1.2: 修正 Caddyfile 语法（合并为单一 site block，使用 handle 区分路由）；更新 Authelia forward auth 端点为 4.38+ 格式 `/api/authz/forward-auth`
+- v1.1: 修正 Authelia Passkey 为 2FA（非一级认证）；补充 80 端口；补充 SSH 密钥管理、ECS 镜像、备份策略；移除 Docker-in-Docker 决策理由；更新 Authelia 配置格式为 4.38+ 版本

@@ -31,6 +31,8 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | \
 USER opencode
 WORKDIR /home/opencode
 
+ENV PATH="/home/opencode/.opencode/bin:${PATH}"
+
 ARG OPENCODE_VERSION=latest
 RUN ARCH=$(uname -m) && \
     case "$ARCH" in x86_64) ARCH="x64" ;; aarch64|arm64) ARCH="arm64" ;; esac && \

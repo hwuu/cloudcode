@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/hwuu/cloudcode/internal/alicloud"
 	"github.com/hwuu/cloudcode/internal/config"
@@ -93,6 +94,7 @@ func (d *Destroyer) Run(ctx context.Context, force, dryRun bool) error {
 			failedResources = append(failedResources, fmt.Sprintf("解绑 EIP: %v", err))
 		} else {
 			d.printf(" ✓\n")
+			time.Sleep(5 * time.Second)
 		}
 	}
 
@@ -109,18 +111,7 @@ func (d *Destroyer) Run(ctx context.Context, force, dryRun bool) error {
 		}
 	}
 
-	// 3. 停止 ECS
-	if state.Resources.ECS.ID != "" {
-		d.printf("  停止 ECS (%s)...", state.Resources.ECS.ID)
-		if err := alicloud.StopECSInstance(d.ECS, state.Resources.ECS.ID); err != nil {
-			d.printf(" ⚠ %v\n", err)
-			failedResources = append(failedResources, fmt.Sprintf("停止 ECS %s: %v", state.Resources.ECS.ID, err))
-		} else {
-			d.printf(" ✓\n")
-		}
-	}
-
-	// 4. 删除 ECS
+	// 3. 删除 ECS（force delete 会自动停止）
 	if state.Resources.ECS.ID != "" {
 		d.printf("  删除 ECS (%s)...", state.Resources.ECS.ID)
 		if err := alicloud.DeleteECSInstance(d.ECS, state.Resources.ECS.ID); err != nil {
@@ -130,13 +121,14 @@ func (d *Destroyer) Run(ctx context.Context, force, dryRun bool) error {
 			state.Resources.ECS = config.ECSResource{}
 			_ = d.saveState(state)
 			d.printf(" ✓\n")
+			time.Sleep(10 * time.Second)
 		}
 	}
 
-	// 5. 删除 SSH 密钥对
+	// 4. 删除 SSH 密钥对
 	if state.Resources.SSHKeyPair.Name != "" {
 		d.printf("  删除 SSH 密钥对 (%s)...", state.Resources.SSHKeyPair.Name)
-		if err := alicloud.DeleteSSHKeyPair(d.ECS, state.Resources.SSHKeyPair.Name); err != nil {
+		if err := alicloud.DeleteSSHKeyPair(d.ECS, state.Resources.SSHKeyPair.Name, d.Region); err != nil {
 			d.printf(" ⚠ %v\n", err)
 			failedResources = append(failedResources, fmt.Sprintf("删除密钥对 %s: %v", state.Resources.SSHKeyPair.Name, err))
 		} else {
@@ -146,7 +138,7 @@ func (d *Destroyer) Run(ctx context.Context, force, dryRun bool) error {
 		}
 	}
 
-	// 6. 删除安全组
+	// 5. 删除安全组
 	if state.Resources.SecurityGroup.ID != "" {
 		d.printf("  删除安全组 (%s)...", state.Resources.SecurityGroup.ID)
 		if err := alicloud.DeleteSecurityGroup(d.ECS, state.Resources.SecurityGroup.ID, d.Region); err != nil {
@@ -159,7 +151,7 @@ func (d *Destroyer) Run(ctx context.Context, force, dryRun bool) error {
 		}
 	}
 
-	// 7. 删除 VSwitch
+	// 6. 删除 VSwitch
 	if state.Resources.VSwitch.ID != "" {
 		d.printf("  删除交换机 (%s)...", state.Resources.VSwitch.ID)
 		if err := alicloud.DeleteVSwitch(d.VPC, state.Resources.VSwitch.ID); err != nil {
@@ -169,10 +161,11 @@ func (d *Destroyer) Run(ctx context.Context, force, dryRun bool) error {
 			state.Resources.VSwitch = config.VSwitchResource{}
 			_ = d.saveState(state)
 			d.printf(" ✓\n")
+			time.Sleep(5 * time.Second)
 		}
 	}
 
-	// 8. 删除 VPC
+	// 7. 删除 VPC
 	if state.Resources.VPC.ID != "" {
 		d.printf("  删除 VPC (%s)...", state.Resources.VPC.ID)
 		if err := alicloud.DeleteVPC(d.VPC, state.Resources.VPC.ID); err != nil {
@@ -185,11 +178,11 @@ func (d *Destroyer) Run(ctx context.Context, force, dryRun bool) error {
 		}
 	}
 
-	// 9. 删除本地 SSH 私钥
+	// 8. 删除本地 SSH 私钥
 	keyPath := filepath.Join(d.getStateDir(), "ssh_key")
 	_ = os.Remove(keyPath)
 
-	// 10. 删除 state 文件
+	// 9. 删除 state 文件
 	if err := d.deleteState(); err != nil {
 		d.printf("  ⚠ 删除 state 文件失败: %v\n", err)
 	}

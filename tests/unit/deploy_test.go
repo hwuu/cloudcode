@@ -42,9 +42,9 @@ func (m *deployMockSTS) GetCallerIdentity() (*stsclient.GetCallerIdentityRespons
 }
 
 type deployMockECS struct {
-	createdInstances []string
-	startedInstances []string
-	describeStatus   string
+	createdInstances  []string
+	startedInstances  []string
+	describeStatus    string
 }
 
 func (m *deployMockECS) CreateInstance(req *ecsclient.CreateInstanceRequest) (*ecsclient.CreateInstanceResponse, error) {
@@ -63,7 +63,12 @@ func (m *deployMockECS) StartInstance(req *ecsclient.StartInstanceRequest) (*ecs
 func (m *deployMockECS) DescribeInstances(req *ecsclient.DescribeInstancesRequest) (*ecsclient.DescribeInstancesResponse, error) {
 	status := m.describeStatus
 	if status == "" {
-		status = "Running"
+		// 启动前返回 Stopped，启动后返回 Running
+		if len(m.startedInstances) > 0 {
+			status = "Running"
+		} else {
+			status = "Stopped"
+		}
 	}
 	id := "i-test-001"
 	instType := "ecs.e-c1m2.large"
@@ -181,7 +186,18 @@ func (m *deployMockVPC) DeleteVpc(req *vpcclient.DeleteVpcRequest) (*vpcclient.D
 }
 
 func (m *deployMockVPC) DescribeVpcs(req *vpcclient.DescribeVpcsRequest) (*vpcclient.DescribeVpcsResponse, error) {
-	return &vpcclient.DescribeVpcsResponse{}, nil
+	status := "Available"
+	vpcID := "vpc-test-001"
+	cidr := "192.168.0.0/16"
+	return &vpcclient.DescribeVpcsResponse{
+		Body: &vpcclient.DescribeVpcsResponseBody{
+			Vpcs: &vpcclient.DescribeVpcsResponseBodyVpcs{
+				Vpc: []*vpcclient.DescribeVpcsResponseBodyVpcsVpc{
+					{VpcId: &vpcID, CidrBlock: &cidr, Status: &status},
+				},
+			},
+		},
+	}, nil
 }
 
 func (m *deployMockVPC) CreateVSwitch(req *vpcclient.CreateVSwitchRequest) (*vpcclient.CreateVSwitchResponse, error) {
@@ -241,7 +257,7 @@ func newTestDeployer(stateDir string, promptInput string) *deploy.Deployer {
 	prompter := config.NewPrompter(strings.NewReader(promptInput), output)
 
 	return &deploy.Deployer{
-		ECS:          &deployMockECS{describeStatus: "Running"},
+		ECS:          &deployMockECS{},
 		VPC:          &deployMockVPC{},
 		STS:          &deployMockSTS{},
 		Prompter:     prompter,

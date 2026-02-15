@@ -177,6 +177,9 @@ func (d *Deployer) CreateResources(ctx context.Context, state *config.State, ssh
 		if err != nil {
 			return err
 		}
+		if err := alicloud.WaitVPCAvailable(d.VPC, vpc.ID, d.Region, 60*time.Second); err != nil {
+			return err
+		}
 		state.Resources.VPC = config.VPCResource{ID: vpc.ID, CIDR: vpc.CIDR}
 		if err := d.saveState(state); err != nil {
 			return err
@@ -236,7 +239,7 @@ func (d *Deployer) CreateResources(ctx context.Context, state *config.State, ssh
 
 	// SSH 密钥对
 	if !state.HasSSHKeyPair() {
-		keyPair, err := alicloud.CreateSSHKeyPair(d.ECS, alicloud.DefaultSSHKeyName)
+		keyPair, err := alicloud.CreateSSHKeyPair(d.ECS, alicloud.DefaultSSHKeyName, d.Region)
 		if err != nil {
 			return err
 		}
@@ -277,6 +280,11 @@ func (d *Deployer) CreateResources(ctx context.Context, state *config.State, ssh
 			return err
 		}
 		d.printf("  ✓ 创建 ECS 实例 (%s)\n", ecs.ID)
+
+		// 等待实例就绪（Pending → Stopped）
+		if err := alicloud.WaitForInstanceStatus(ctx, d.ECS, ecs.ID, d.Region, "Stopped", d.WaitInterval, d.WaitTimeout); err != nil {
+			return fmt.Errorf("等待 ECS 实例就绪失败: %w", err)
+		}
 
 		// 启动实例
 		if err := alicloud.StartECSInstance(d.ECS, ecs.ID); err != nil {

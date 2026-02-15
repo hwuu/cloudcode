@@ -3,7 +3,6 @@
 package e2e
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"os"
@@ -26,17 +25,25 @@ import (
 //   ALICLOUD_ACCESS_KEY_SECRET
 //   ALICLOUD_REGION (可选，默认 ap-southeast-1)
 //   E2E_DOMAIN (可选，留空使用 nip.io)
-//   E2E_API_KEY (必须，AI 提供商 API Key)
-//   E2E_API_BASE_URL (可选，OpenAI 兼容 Base URL，如 https://api.siliconflow.cn/v1)
+//   E2E_API_KEY (可选，AI API Key，留空使用占位值)
+//   E2E_API_BASE_URL (可选，OpenAI 兼容 Base URL)
 
 func skipIfNoCredentials(t *testing.T) {
 	t.Helper()
 	if os.Getenv("ALICLOUD_ACCESS_KEY_ID") == "" || os.Getenv("ALICLOUD_ACCESS_KEY_SECRET") == "" {
 		t.Skip("跳过 E2E 测试：未设置 ALICLOUD_ACCESS_KEY_ID / ALICLOUD_ACCESS_KEY_SECRET")
 	}
-	if os.Getenv("E2E_API_KEY") == "" {
-		t.Skip("跳过 E2E 测试：未设置 E2E_API_KEY")
-	}
+}
+
+// testWriter 将输出实时写到 testing.T.Log，E2E 运行时可见进度
+type testWriter struct {
+	t *testing.T
+}
+
+func (w *testWriter) Write(p []byte) (n int, err error) {
+	w.t.Helper()
+	w.t.Log(strings.TrimRight(string(p), "\n"))
+	return len(p), nil
 }
 
 func newE2EDeployer(t *testing.T, stateDir string) (*deploy.Deployer, *alicloud.Config) {
@@ -52,7 +59,7 @@ func newE2EDeployer(t *testing.T, stateDir string) (*deploy.Deployer, *alicloud.
 		t.Fatalf("初始化阿里云 SDK 失败: %v", err)
 	}
 
-	output := &bytes.Buffer{}
+	output := &testWriter{t: t}
 	prompter := config.NewPrompter(strings.NewReader(""), output)
 
 	d := &deploy.Deployer{
@@ -81,7 +88,7 @@ func newE2EDestroyer(t *testing.T, stateDir string, cfg *alicloud.Config) *deplo
 		t.Fatalf("初始化阿里云 SDK 失败: %v", err)
 	}
 
-	output := &bytes.Buffer{}
+	output := &testWriter{t: t}
 	return &deploy.Destroyer{
 		ECS:      clients.ECS,
 		VPC:      clients.VPC,
@@ -145,12 +152,17 @@ func TestE2E_FullLifecycle(t *testing.T) {
 		domain = state.Resources.EIP.IP + ".nip.io"
 	}
 
+	apiKey := os.Getenv("E2E_API_KEY")
+	if apiKey == "" {
+		apiKey = "sk-placeholder-for-e2e-test"
+	}
+
 	deployConfig := &deploy.DeployConfig{
-		Domain:       domain,
-		Username:     "e2e-admin",
-		Password:     "E2eTestPass123!",
-		Email:        "e2e@example.com",
-		OpenAIAPIKey: os.Getenv("E2E_API_KEY"),
+		Domain:        domain,
+		Username:      "e2e-admin",
+		Password:      "E2eTestPass123!",
+		Email:         "e2e@example.com",
+		OpenAIAPIKey:  apiKey,
 		OpenAIBaseURL: os.Getenv("E2E_API_BASE_URL"),
 	}
 
@@ -166,7 +178,7 @@ func TestE2E_FullLifecycle(t *testing.T) {
 
 	// --- 阶段 5: Status ---
 	t.Log("阶段 5: Status")
-	statusOutput := &bytes.Buffer{}
+	statusOutput := &testWriter{t: t}
 	statusRunner := &deploy.StatusRunner{
 		Output:   statusOutput,
 		StateDir: stateDir,
@@ -177,7 +189,6 @@ func TestE2E_FullLifecycle(t *testing.T) {
 	if err := statusRunner.Run(ctx); err != nil {
 		t.Fatalf("Status 失败: %v", err)
 	}
-	t.Logf("Status 输出:\n%s", statusOutput.String())
 
 	// --- 阶段 6: 幂等性检查 ---
 	t.Log("阶段 6: 幂等性检查")

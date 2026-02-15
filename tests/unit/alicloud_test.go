@@ -438,7 +438,7 @@ func TestCreateSSHKeyPair_Success(t *testing.T) {
 		},
 	}
 
-	keyPair, err := alicloud.CreateSSHKeyPair(mockECS, keyName)
+	keyPair, err := alicloud.CreateSSHKeyPair(mockECS, keyName, "ap-southeast-1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

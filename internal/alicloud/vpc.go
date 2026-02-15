@@ -2,6 +2,7 @@ package alicloud
 
 import (
 	"fmt"
+	"time"
 
 	ecsclient "github.com/alibabacloud-go/ecs-20140526/v4/client"
 	vpcclient "github.com/alibabacloud-go/vpc-20160428/v6/client"
@@ -49,6 +50,29 @@ func CreateVPC(vpcCli VPCAPI, regionID, vpcName string) (*VPCResource, error) {
 		ID:   *resp.Body.VpcId,
 		CIDR: cidr,
 	}, nil
+}
+
+// WaitVPCAvailable 等待 VPC 状态变为 Available
+func WaitVPCAvailable(vpcCli VPCAPI, vpcID, regionID string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		req := &vpcclient.DescribeVpcsRequest{
+			VpcId:    &vpcID,
+			RegionId: &regionID,
+		}
+		resp, err := vpcCli.DescribeVpcs(req)
+		if err != nil {
+			return err
+		}
+		if resp.Body != nil && resp.Body.Vpcs != nil && resp.Body.Vpcs.Vpc != nil && len(resp.Body.Vpcs.Vpc) > 0 {
+			status := resp.Body.Vpcs.Vpc[0].Status
+			if status != nil && *status == "Available" {
+				return nil
+			}
+		}
+		time.Sleep(2 * time.Second)
+	}
+	return fmt.Errorf("VPC %s 未在 %v 内就绪", vpcID, timeout)
 }
 
 func DeleteVPC(vpcCli VPCAPI, vpcID string) error {

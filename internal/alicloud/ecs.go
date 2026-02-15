@@ -10,7 +10,7 @@ import (
 
 const (
 	DefaultInstanceType       = "ecs.e-c1m2.large"
-	DefaultImageID            = "ubuntu_24_04_x64"
+	DefaultImageID            = "ubuntu_24_04_x64_20G_alibase_20260119.vhd"
 	DefaultSystemDiskSize     = 60
 	DefaultSystemDiskCategory = "cloud_essd"
 	DefaultSSHKeyName         = "cloudcode-ssh-key"
@@ -201,6 +201,45 @@ func DescribeECSInstance(ecsCli ECSAPI, instanceID, regionID string) (*ECSResour
 	}, nil
 }
 
+func WaitForInstanceStatus(ctx context.Context, ecsCli ECSAPI, instanceID, regionID, targetStatus string, interval, timeout time.Duration) error {
+	if interval == 0 {
+		interval = DefaultWaitInterval
+	}
+	if timeout == 0 {
+		timeout = DefaultWaitTimeout
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("等待 ECS 实例状态 %s 超时", targetStatus)
+		case <-ticker.C:
+			req := &ecsclient.DescribeInstancesRequest{
+				InstanceIds: teaString(fmt.Sprintf(`["%s"]`, instanceID)),
+				RegionId:    &regionID,
+			}
+			resp, err := ecsCli.DescribeInstances(req)
+			if err != nil {
+				continue
+			}
+			if resp == nil || resp.Body == nil || resp.Body.Instances == nil ||
+				resp.Body.Instances.Instance == nil || len(resp.Body.Instances.Instance) == 0 {
+				continue
+			}
+			inst := resp.Body.Instances.Instance[0]
+			if inst.Status != nil && *inst.Status == targetStatus {
+				return nil
+			}
+		}
+	}
+}
+
 func WaitForInstanceRunning(ctx context.Context, ecsCli ECSAPI, instanceID, regionID string, interval, timeout time.Duration) (*ECSResource, error) {
 	if interval == 0 {
 		interval = DefaultWaitInterval
@@ -265,14 +304,27 @@ type SSHKeyPairResource struct {
 	FingerPrint string
 }
 
-func CreateSSHKeyPair(ecsCli ECSAPI, keyName string) (*SSHKeyPairResource, error) {
+func CreateSSHKeyPair(ecsCli ECSAPI, keyName, regionID string) (*SSHKeyPairResource, error) {
 	req := &ecsclient.CreateKeyPairRequest{
 		KeyPairName: &keyName,
+		RegionId:    &regionID,
 	}
 
 	resp, err := ecsCli.CreateKeyPair(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create SSH key pair: %w", err)
+		// 如果密钥对已存在，先删除再重建（需要获取私钥）
+		if isErrorCode(err, "KeyPair.AlreadyExist") {
+			if delErr := DeleteSSHKeyPair(ecsCli, keyName, regionID); delErr != nil {
+				return nil, fmt.Errorf("failed to delete existing SSH key pair: %w", delErr)
+			}
+			time.Sleep(2 * time.Second) // 等待删除生效
+			resp, err = ecsCli.CreateKeyPair(req)
+			if err != nil {
+				return nil, fmt.Errorf("failed to create SSH key pair after delete: %w", err)
+			}
+		} else {
+			return nil, fmt.Errorf("failed to create SSH key pair: %w", err)
+		}
 	}
 
 	if resp == nil || resp.Body == nil || resp.Body.KeyPairName == nil {
@@ -292,9 +344,10 @@ func CreateSSHKeyPair(ecsCli ECSAPI, keyName string) (*SSHKeyPairResource, error
 	return result, nil
 }
 
-func DeleteSSHKeyPair(ecsCli ECSAPI, keyName string) error {
+func DeleteSSHKeyPair(ecsCli ECSAPI, keyName, regionID string) error {
 	req := &ecsclient.DeleteKeyPairsRequest{
 		KeyPairNames: teaString(fmt.Sprintf(`["%s"]`, keyName)),
+		RegionId:     &regionID,
 	}
 	_, err := ecsCli.DeleteKeyPairs(req)
 	return err

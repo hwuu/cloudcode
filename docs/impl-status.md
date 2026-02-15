@@ -254,3 +254,109 @@
 - SSH IP 限制正确传递到 CreateResources → DefaultSecurityGroupRules
 - 删除多余的 CreateResourcesWithSSHIP 方法
 - Run 方法始终收集 PromptConfig，消除 --force 模式下 cfg 为 nil 的风险
+
+---
+
+## 步骤 7 详情
+
+**状态**：✅ 完成
+
+**新增文件**：
+- `internal/deploy/status.go` — StatusRunner，读取 state 展示云资源和应用信息，通过 SSH 查询容器状态
+
+**测试结果**：
+- `TestStatus_NoState` — PASS（无 state 时提示未部署）
+- `TestStatus_WithState` — PASS（展示 VPC/EIP/域名等信息）
+- `TestStatus_WithContainers` — PASS（SSH 查询 docker compose ps）
+
+**关键设计**：
+- StatusRunner 独立于 Deployer，仅需 Output + StateDir + SSHDialFunc
+- 容器状态查询可选（无 SSH 配置时跳过）
+- readSSHKeyFrom 提取为包级共享函数
+
+---
+
+## 步骤 8 详情
+
+**状态**：✅ 完成
+
+**新增文件**：
+- `internal/deploy/destroy.go` — Destroyer，按序删除云资源 + 清理本地文件
+
+**修改文件**：
+- `cmd/cloudcode/main.go` — destroy 命令注入真实依赖 + `--force` / `--dry-run` flags
+
+**删除顺序**：
+1. 解绑 EIP
+2. 释放 EIP
+3. 停止 ECS
+4. 删除 ECS
+5. 删除 SSH 密钥对
+6. 删除安全组
+7. 删除 VSwitch
+8. 删除 VPC
+9. 删除本地 SSH 私钥
+10. 删除 state.json
+
+**测试结果**：
+- `TestDestroy_NoState` — PASS
+- `TestDestroy_DryRun` — PASS（不删除资源，state 保留）
+- `TestDestroy_Force` — PASS（跳过确认，资源+state 删除）
+- `TestDestroy_Cancelled` — PASS（用户取消，资源保留）
+
+**关键设计**：
+- 单个资源删除失败不阻塞后续删除，最后汇总失败资源
+- 每步删除成功后立即更新 state，支持中断恢复
+- `--dry-run` 仅展示将删除的资源列表
+
+**Review 修复（2026-02-15）**：
+- install.sh 增加 sudo 可用性检查
+- destroy 失败资源汇总输出
+
+---
+
+## 步骤 9 详情
+
+**状态**：✅ 完成
+
+**新增文件**：
+- `.goreleaser.yml` — v2 配置，构建 linux/darwin amd64/arm64 四个二进制
+- `.github/workflows/release.yml` — tag 触发 test + goreleaser release
+- `install.sh` — 检测 OS/ARCH 下载对应二进制到 /usr/local/bin
+
+**验证结果**：
+- `goreleaser check` — 通过
+- `goreleaser build --snapshot --clean` — 四个二进制构建成功
+
+**发布产物**：
+- `cloudcode-linux-amd64`
+- `cloudcode-linux-arm64`
+- `cloudcode-darwin-amd64`
+- `cloudcode-darwin-arm64`
+- `install.sh`
+- `checksums.txt`
+
+---
+
+## 步骤 10 详情
+
+**状态**：✅ 完成
+
+**新增文件**：
+- `tests/e2e/deploy_test.go` — E2E 测试（build tag `e2e` 隔离）
+- `README.md` — 项目说明
+
+**E2E 测试场景**：
+- `TestE2E_FullLifecycle` — deploy → status → 幂等检查 → destroy 全流程
+- `TestE2E_DestroyDryRun` — 创建 VPC → dry-run 不删除 → 真正清理
+
+**运行方式**：
+```bash
+go test ./tests/e2e/ -tags e2e -v -timeout 30m
+```
+
+**环境变量**：
+- `ALICLOUD_ACCESS_KEY_ID` / `ALICLOUD_ACCESS_KEY_SECRET`（必须）
+- `ALICLOUD_REGION`（可选，默认 ap-southeast-1）
+- `E2E_DOMAIN`（可选，留空使用 nip.io）
+- `E2E_OPENAI_API_KEY`（必须）

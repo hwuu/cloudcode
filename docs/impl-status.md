@@ -12,7 +12,7 @@
 | 6 | deploy 命令 — 串联完整部署流程 | ✅ 完成 | 2026-02-15 |
 | 7 | status 命令 | ✅ 完成 | 2026-02-15 |
 | 8 | destroy 命令 | ✅ 完成 | 2026-02-15 |
-| 9 | goreleaser + GitHub Actions | ⏳ 待开始 | |
+| 9 | goreleaser + GitHub Actions | ✅ 完成 | 2026-02-15 |
 | 10 | 端到端测试 + 文档更新 | ⏳ 待开始 | |
 
 ---

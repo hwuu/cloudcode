@@ -349,6 +349,12 @@ func (d *Deployer) DeployApp(ctx context.Context, state *config.State, cfg *Depl
 	defer sshClient.Close()
 	d.printf("  ✓ SSH 连接成功\n")
 
+	// 等待 apt 锁释放（Ubuntu 新实例 unattended-upgrades 可能占锁）
+	waitAptCmd := "for i in $(seq 1 60); do fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 || break; sleep 5; done"
+	if _, err := sshClient.RunCommand(ctx, waitAptCmd); err != nil {
+		d.printf("  ⚠ 等待 apt 锁超时，继续尝试安装\n")
+	}
+
 	// 安装 Docker
 	dockerCmd := "which docker > /dev/null 2>&1 || (curl -fsSL https://get.docker.com | sh -s -- --mirror Aliyun && systemctl enable docker && systemctl start docker)"
 	cmdCtx, cancel := context.WithTimeout(ctx, remote.DockerInstallTimeout)
@@ -465,6 +471,17 @@ func (d *Deployer) HealthCheck(ctx context.Context, state *config.State) error {
 	for _, line := range strings.Split(strings.TrimSpace(output), "\n") {
 		if line != "" {
 			d.printf("    %s\n", line)
+			// 如果容器不健康，抓取日志
+			parts := strings.Fields(line)
+			if len(parts) >= 2 && parts[1] != "running" {
+				logs, logErr := sshClient.RunCommand(ctx, fmt.Sprintf("cd ~/cloudcode && docker compose logs --tail=30 %s 2>&1", parts[0]))
+				if logErr == nil && logs != "" {
+					d.printf("    [%s 日志]:\n", parts[0])
+					for _, logLine := range strings.Split(strings.TrimSpace(logs), "\n") {
+						d.printf("      %s\n", logLine)
+					}
+				}
+			}
 		}
 	}
 

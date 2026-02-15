@@ -29,6 +29,10 @@ storage:
   local:
     path: /config/db.sqlite3
 
+identity_validation:
+  reset_password:
+    jwt_secret: '{{ .SessionSecret }}'
+
 webauthn:
   display_name: CloudCode
   attestation_conveyance_preference: indirect

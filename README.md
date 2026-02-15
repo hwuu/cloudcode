@@ -21,6 +21,7 @@ curl -fsSL https://github.com/hwuu/cloudcode/releases/latest/download/install.sh
 ## 前置条件
 
 - 阿里云账号，开通 ECS、VPC、EIP 服务
+- 获取 AccessKey：登录 [阿里云控制台](https://ram.console.aliyun.com/manage/ak) → AccessKey 管理 → 创建 AccessKey（建议使用 RAM 子账号，授予 ECS/VPC/STS 权限）
 - 设置环境变量：
 
 ```bash
@@ -28,6 +29,26 @@ export ALICLOUD_ACCESS_KEY_ID="your-access-key-id"
 export ALICLOUD_ACCESS_KEY_SECRET="your-access-key-secret"
 export ALICLOUD_REGION="ap-southeast-1"  # 可选，默认新加坡
 ```
+
+### 可选区域
+
+| Region ID | 位置 |
+|-----------|------|
+| `ap-southeast-1` | 新加坡（默认） |
+| `ap-southeast-5` | 雅加达 |
+| `ap-northeast-1` | 东京 |
+| `ap-northeast-2` | 首尔 |
+| `us-west-1` | 硅谷 |
+| `us-east-1` | 弗吉尼亚 |
+| `eu-central-1` | 法兰克福 |
+| `eu-west-1` | 伦敦 |
+| `cn-hongkong` | 中国香港 |
+| `cn-hangzhou` | 杭州 |
+| `cn-shanghai` | 上海 |
+| `cn-beijing` | 北京 |
+| `cn-shenzhen` | 深圳 |
+
+完整列表见 [阿里云地域和可用区](https://help.aliyun.com/document_detail/40654.html)。
 
 ## 使用
 

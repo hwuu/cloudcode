@@ -7,8 +7,8 @@
 | 1 | Go 项目初始化 + Cobra CLI 框架 | ✅ 完成 | 2026-02-15 |
 | 2 | internal/alicloud — 阿里云资源管理 | ✅ 完成 | 2026-02-15 |
 | 3 | internal/config — 状态文件与交互输入 | ✅ 完成 | 2026-02-15 |
-| 4 | internal/remote — SSH/SFTP 远程操作 | ⏳ 待开始 | |
-| 5 | internal/template — 模板渲染 | ⏳ 待开始 | |
+| 4 | internal/remote — SSH/SFTP 远程操作 | ✅ 完成 | 2026-02-15 |
+| 5 | internal/template — 模板渲染 | ✅ 完成 | 2026-02-15 |
 | 6 | deploy 命令 — 串联完整部署流程 | ⏳ 待开始 | |
 | 7 | status 命令 | ⏳ 待开始 | |
 | 8 | destroy 命令 | ⏳ 待开始 | |
@@ -138,3 +138,72 @@
 - Argon2id memory 参数修正为 65536 KiB（与 Authelia 配置一致）
 - NewState 自动填充 CreatedAt 字段
 - 添加 TODO 标注 readPassword 当前实现为空壳（密码明文回显，后续优化）
+
+---
+
+## 步骤 4 详情
+
+**状态**：✅ 完成
+
+**新增文件**：
+- `internal/remote/ssh.go` — SSHClient 接口 + WaitForSSH（指数退避 1s→10s，context 超时 2 分钟）+ 常量定义
+- `internal/remote/sftp.go` — SFTPClient 接口 + UploadFiles 批量上传
+- `tests/unit/remote_test.go` — 9 个测试用例
+
+**测试结果**：
+- `TestRunCommand_Success` — PASS
+- `TestRunCommand_Error` — PASS
+- `TestWaitForSSH_Success` — PASS
+- `TestWaitForSSH_Timeout` — PASS
+- `TestWaitForSSH_ExponentialBackoff` — PASS
+- `TestUploadFile_Success` — PASS
+- `TestUploadFile_Error` — PASS
+- `TestUploadFiles_Multiple` — PASS
+- `TestUploadFiles_StopsOnError` — PASS
+
+**关键设计**：
+- SSHClient / SFTPClient 接口抽象，支持 mock 测试
+- WaitForSSH 使用指数退避（InitialInterval → MaxInterval），context 控制超时
+- UploadFiles 批量上传，任一失败立即返回错误
+- 常量定义：DefaultCommandTimeout=5min, DockerInstallTimeout=10min
+
+---
+
+## 步骤 5 详情
+
+**状态**：✅ 完成
+
+**新增文件**：
+- `internal/template/render.go` — go:embed 嵌入 + RenderTemplate / GetStaticFile / RenderAll
+- `internal/template/templates/docker-compose.yml` — 静态文件
+- `internal/template/templates/Caddyfile.tmpl` — 模板文件
+- `internal/template/templates/env.tmpl` — 模板文件
+- `internal/template/templates/Dockerfile.opencode` — 静态文件
+- `internal/template/templates/authelia/configuration.yml.tmpl` — 模板文件
+- `internal/template/templates/authelia/users_database.yml.tmpl` — 模板文件
+- `tests/unit/template_render_test.go` — 12 个测试用例
+
+**测试结果**：
+- `TestStaticFiles_NonEmpty` — PASS
+- `TestTemplateFiles_NonEmpty` — PASS
+- `TestRenderCaddyfile` — PASS
+- `TestRenderEnv` — PASS
+- `TestRenderEnv_OptionalFieldsEmpty` — PASS
+- `TestRenderAutheliaConfig` — PASS
+- `TestRenderAutheliaUsersDB` — PASS
+- `TestGetStaticFile_DockerCompose` — PASS
+- `TestGetStaticFile_Dockerfile` — PASS
+- `TestRenderAll` — PASS
+- `TestRenderTemplate_NotFound` — PASS
+- `TestGetStaticFile_NotFound` — PASS
+
+**关键设计**：
+- 模板文件放在 `internal/template/templates/`（go:embed 路径相对于源文件目录）
+- TemplateData 结构体包含所有渲染字段（Domain/Username/HashedPassword/Email/SessionSecret/StorageEncryptionKey/OpenAIAPIKey/OpenAIBaseURL/AnthropicAPIKey）
+- RenderAll 返回 ECS 目标路径 → 内容的映射，与 design-oc.md 5.1.6 文件映射表一致
+- 静态文件（docker-compose.yml、Dockerfile.opencode）原样输出，模板文件（.tmpl）渲染后输出
+
+**注意**：design-oc.md 5.1.1 中模板目录在项目根目录 `templates/`，实际放在 `internal/template/templates/`，因为 go:embed 路径必须相对于源文件目录
+
+**Review 修复（2026-02-15）**：
+- env.tmpl 可选字段（OpenAIBaseURL/AnthropicAPIKey）为空时不输出对应行

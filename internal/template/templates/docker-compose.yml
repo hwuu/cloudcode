@@ -1,0 +1,56 @@
+services:
+  caddy:
+    image: caddy:2-alpine
+    container_name: caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - authelia
+      - opencode
+    networks:
+      - cloudcode-net
+
+  authelia:
+    image: authelia/authelia:4.38
+    container_name: authelia
+    restart: unless-stopped
+    volumes:
+      - ./authelia:/config
+    environment:
+      - TZ=Asia/Singapore
+    expose:
+      - 9091
+    networks:
+      - cloudcode-net
+
+  opencode:
+    build:
+      context: .
+      dockerfile: Dockerfile.opencode
+    container_name: opencode
+    restart: unless-stopped
+    volumes:
+      - opencode_workspace:/home/opencode/workspace
+      - opencode_config:/home/opencode/.config/opencode
+    env_file:
+      - .env
+    expose:
+      - 4096
+    networks:
+      - cloudcode-net
+
+volumes:
+  caddy_data:
+  caddy_config:
+  opencode_workspace:
+  opencode_config:
+
+networks:
+  cloudcode-net:
+    driver: bridge

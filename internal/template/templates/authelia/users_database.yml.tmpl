@@ -1,0 +1,7 @@
+users:
+  {{ .Username }}:
+    displayname: "{{ .Username }}"
+    password: "{{ .HashedPassword }}"
+    email: "{{ .Email }}"
+    groups:
+      - admins

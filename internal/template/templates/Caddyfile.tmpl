@@ -1,0 +1,21 @@
+{{ .Domain }} {
+    redir /auth /auth/ 301
+
+    handle_path /auth/* {
+        reverse_proxy authelia:9091
+    }
+
+    handle {
+        forward_auth authelia:9091 {
+            uri /api/authz/forward-auth
+            copy_headers Remote-User Remote-Groups Remote-Name Remote-Email
+        }
+
+        reverse_proxy opencode:4096
+    }
+
+    log {
+        output stdout
+        format console
+    }
+}

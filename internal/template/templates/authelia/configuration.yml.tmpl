@@ -1,0 +1,55 @@
+server:
+  address: 'tcp://0.0.0.0:9091/'
+
+log:
+  level: info
+
+authentication_backend:
+  file:
+    path: /config/users_database.yml
+    password:
+      algorithm: argon2id
+      iterations: 1
+      salt_length: 16
+      parallelism: 8
+      memory: 64
+
+session:
+  secret: {{ .SessionSecret }}
+  expiration: 12h
+  inactivity: 30m
+  cookies:
+    - domain: {{ .Domain }}
+      authelia_url: https://{{ .Domain }}/auth
+      name: authelia_session
+      same_site: lax
+
+storage:
+  encryption_key: {{ .StorageEncryptionKey }}
+  local:
+    path: /config/db.sqlite3
+
+webauthn:
+  display_name: CloudCode
+  attestation_conveyance_preference: indirect
+  user_verification: preferred
+  timeout: 60s
+
+totp:
+  issuer: CloudCode
+  period: 30
+  skew: 1
+
+access_control:
+  default_policy: deny
+  rules:
+    - domain: {{ .Domain }}
+      resources:
+        - '^/auth([/?].*)?$'
+      policy: bypass
+    - domain: {{ .Domain }}
+      policy: two_factor
+
+notifier:
+  filesystem:
+    filename: /config/notification.txt

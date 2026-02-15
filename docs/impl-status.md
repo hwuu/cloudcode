@@ -360,3 +360,44 @@ go test ./tests/e2e/ -tags e2e -v -timeout 30m
 - `E2E_DOMAIN`（可选，留空使用 nip.io）
 - `E2E_API_KEY`（可选，AI API Key，留空使用占位值）
 - `E2E_API_BASE_URL`（可选，OpenAI 兼容 Base URL）
+
+---
+
+## E2E 验证修复（2026-02-15 ~ 2026-02-16）
+
+通过真实阿里云环境 E2E 测试发现并修复以下问题：
+
+### 云资源创建
+
+- **VPC 状态等待**：CreateVPC 后需等待 Available 才能创建 VSwitch，新增 `WaitVPCAvailable`
+- **ECS 状态等待**：CreateECS 后需等待 Stopped 才能 StartInstance，新增 `WaitForInstanceStatus`
+- **SSH 密钥对 RegionID**：`CreateSSHKeyPair` / `DeleteSSHKeyPair` 缺少 RegionID 参数，阿里云 API 返回 MissingParameter
+- **SSH 密钥对幂等**：密钥对已存在时自动删除重建，新增 `isErrorCode` 辅助函数
+- **ECS 镜像 ID**：新加坡区域需要完整格式 `ubuntu_24_04_x64_20G_alibase_20260119.vhd`
+
+### 应用部署
+
+- **apt 锁等待**：Ubuntu 新实例 `unattended-upgrades` 占 dpkg 锁，Docker 安装失败。安装前循环等待锁释放（最多 5 分钟）
+- **Dockerfile PATH**：opencode 安装到 `~/.opencode/bin`，需在 Dockerfile 中 `ENV PATH` 添加该路径
+- **Authelia jwt_secret**：Authelia 4.38 要求 `identity_validation.reset_password.jwt_secret`，缺失导致容器反复 restarting
+- **Authelia YAML 引号**：session secret 和 storage encryption_key 加单引号，防止 base64 特殊字符导致 YAML 解析失败
+
+### 资源销毁
+
+- **合并停止/删除 ECS**：改用 force delete（自动停止），去掉单独的 StopInstance 步骤
+- **各步骤间加等待**：EIP 解绑后等 5s 再释放，ECS 删除后等 10s 再删密钥对，VSwitch 删除后等 5s 再删 VPC
+- **删除顺序调整**：8 步精简为 7 步（去掉单独停止 ECS）
+
+### E2E 测试改进
+
+- **API Key 可选**：`E2E_API_KEY` 留空时使用占位值，不再 skip 测试
+- **实时输出**：`testWriter` 将 Deployer/Destroyer 输出实时写到 `t.Log`，运行时可见每步进度
+- **容器日志抓取**：HealthCheck 检测到非 running 容器时自动抓取最近 30 行日志，便于定位问题
+
+### 最终 E2E 结果
+
+```
+三个容器全部 running（authelia / caddy / opencode）
+destroy 全部 7 个资源清理成功
+全流程耗时约 644s（~10 分钟）
+```

@@ -289,14 +289,13 @@
 **删除顺序**：
 1. 解绑 EIP
 2. 释放 EIP
-3. 停止 ECS
-4. 删除 ECS
-5. 删除 SSH 密钥对
-6. 删除安全组
-7. 删除 VSwitch
-8. 删除 VPC
-9. 删除本地 SSH 私钥
-10. 删除 state.json
+3. 删除 ECS（force delete 自动停止）
+4. 删除 SSH 密钥对
+5. 删除安全组
+6. 删除 VSwitch
+7. 删除 VPC
+8. 删除本地 SSH 私钥
+9. 删除 state.json
 
 **测试结果**：
 - `TestDestroy_NoState` — PASS
@@ -359,5 +358,5 @@ go test ./tests/e2e/ -tags e2e -v -timeout 30m
 - `ALICLOUD_ACCESS_KEY_ID` / `ALICLOUD_ACCESS_KEY_SECRET`（必须）
 - `ALICLOUD_REGION`（可选，默认 ap-southeast-1）
 - `E2E_DOMAIN`（可选，留空使用 nip.io）
-- `E2E_API_KEY`（必须，AI 提供商 API Key）
+- `E2E_API_KEY`（可选，AI API Key，留空使用占位值）
 - `E2E_API_BASE_URL`（可选，OpenAI 兼容 Base URL）

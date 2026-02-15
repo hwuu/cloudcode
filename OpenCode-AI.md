@@ -35,3 +35,36 @@
 18. 文档中如果要画流程框图，那么框图中的文字用英文，框线要对齐；其余内容保持中文
 
 19. 没有我的明确指令不许 commit / push。commit message 使用中文
+
+---
+
+## 环境配置备忘
+
+### Go 代理
+
+默认 Go 代理 (proxy.golang.org) 在当前网络环境下超时，需使用国内镜像：
+
+```bash
+export GOPROXY=https://goproxy.cn,direct
+```
+
+### Go SDK 路径
+
+Go 安装在用户目录（无 sudo 权限），需确保 PATH 包含：
+
+```bash
+export PATH=$HOME/go-sdk/go/bin:$HOME/go/bin:$PATH
+```
+
+### 常用命令
+
+```bash
+# 构建
+make build
+
+# 运行测试
+make test
+
+# 清理构建产物
+make clean
+```

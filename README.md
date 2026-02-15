@@ -1,1 +1,1 @@
-一键式 OpenCode 上云
+OpenCode 一键式上云

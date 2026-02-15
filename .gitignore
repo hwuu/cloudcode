@@ -1,3 +1,14 @@
 .claude
 .opencode
 state/
+
+# Go
+bin/
+vendor/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out

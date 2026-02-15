@@ -8,6 +8,7 @@ require (
 	github.com/alibabacloud-go/sts-20150401/v2 v2.1.0
 	github.com/alibabacloud-go/vpc-20160428/v6 v6.16.0
 	github.com/spf13/cobra v1.10.2
+	golang.org/x/crypto v0.24.0
 )
 
 require (
@@ -26,5 +27,6 @@ require (
 	github.com/spf13/pflag v1.0.9 // indirect
 	github.com/tjfoc/gmsm v1.4.1 // indirect
 	golang.org/x/net v0.26.0 // indirect
+	golang.org/x/sys v0.21.0 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 )

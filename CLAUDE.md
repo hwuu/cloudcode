@@ -37,8 +37,8 @@
 29. 没有我的明确指令不许 commit / push。commit message 使用中文
 
 30. **Commit Co-Author 规则**：每个 commit 必须添加 `Co-Authored-By` trailer，以便 GitHub 正确显示多个贡献者。格式如下：
-   - OpenCode 实现：`Co-Authored-By: OpenCode (SiliconFlow/GLM-5) <noreply@siliconflow.cn>`
-   - Claude Code 实现：`Co-Authored-By: Claude Code (Anthropic) <noreply@anthropic.com>`
+   - OpenCode 实现：`Co-Authored-By: OpenCode (GLM-5) <noreply@opencode.ai>`
+   - Claude Code 实现：Claude Code 默认
 
 ---
 

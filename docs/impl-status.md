@@ -6,7 +6,7 @@
 |------|------|------|----------|
 | 1 | Go 项目初始化 + Cobra CLI 框架 | ✅ 完成 | 2026-02-15 |
 | 2 | internal/alicloud — 阿里云资源管理 | ✅ 完成 | 2026-02-15 |
-| 3 | internal/config — 状态文件与交互输入 | ⏳ 待开始 | |
+| 3 | internal/config — 状态文件与交互输入 | ✅ 完成 | 2026-02-15 |
 | 4 | internal/remote — SSH/SFTP 远程操作 | ⏳ 待开始 | |
 | 5 | internal/template — 模板渲染 | ⏳ 待开始 | |
 | 6 | deploy 命令 — 串联完整部署流程 | ⏳ 待开始 | |
@@ -89,3 +89,52 @@
 - WaitForEIPBound 改用 context + ticker 模式，避免紧密循环
 - client.go 统一使用 client.Config 初始化所有 SDK 客户端
 - 删除测试中无用的 trueVal 变量
+
+---
+
+## 步骤 3 详情
+
+**状态**：✅ 完成
+
+**新增文件**：
+- `internal/config/state.go` — State 结构体 + LoadState/SaveState/DeleteState + HasXxx 判断 + ResolveKeyPath
+- `internal/config/prompt.go` — Prompter（抽象 io.Reader/Writer）+ Argon2id 哈希 + Secret 生成
+- `tests/unit/config_state_test.go` — 状态文件测试（8 个测试用例）
+- `tests/unit/config_prompt_test.go` — Prompter 测试（11 个测试用例）
+
+**核心依赖**：
+- `golang.org/x/crypto` v0.24.0 — Argon2id 密码哈希
+
+**测试结果**：
+- `TestState_SaveAndLoad` — PASS
+- `TestLoadState_NotFound` — PASS
+- `TestState_DirPermissions` — PASS
+- `TestResolveKeyPath` — PASS（2 子测试）
+- `TestState_HasMethods` — PASS
+- `TestState_HasMethods_Empty` — PASS
+- `TestDeleteState` — PASS
+- `TestNewState_SetsCreatedAt` — PASS
+- `TestPrompter_Prompt` — PASS
+- `TestPrompter_PromptWithDefault` — PASS（2 子测试）
+- `TestPrompter_PromptConfirm` — PASS（5 子测试）
+- `TestPrompter_PromptSelect` — PASS（4 子测试）
+- `TestPrompter_PromptSelect_Invalid` — PASS
+- `TestPrompter_PromptSelect_OutOfRange` — PASS
+- `TestHashPassword_Format` — PASS
+- `TestHashPassword_MemoryParameter` — PASS
+- `TestHashPassword_UniqueSalts` — PASS
+- `TestGenerateSecret_Length` — PASS
+- `TestGenerateSecret_Uniqueness` — PASS
+
+**关键设计**：
+- State 结构体与 design-oc.md 5.1.4 完全一致
+- `~/.cloudcode/` 目录自动创建（0700 权限）
+- Prompter 抽象 stdin/stdout，支持 mock 测试
+- Argon2id 参数：iterations=1, salt_length=16, parallelism=8, memory=64 MiB (65536 KiB)
+- Secret 生成：crypto/rand 生成 32 字节随机数据，base64 编码输出
+- 哈希格式：`$argon2id$v=19$m=65536,t=1,p=8$<salt>$<hash>`
+
+**Review 修复（2026-02-15）**：
+- Argon2id memory 参数修正为 65536 KiB（与 Authelia 配置一致）
+- NewState 自动填充 CreatedAt 字段
+- 添加 TODO 标注 readPassword 当前实现为空壳（密码明文回显，后续优化）

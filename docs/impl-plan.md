@@ -44,9 +44,10 @@
 **目标**：封装所有阿里云 API 调用，通过接口抽象支持 mock 测试。
 
 **新增文件**：
-- `internal/alicloud/client.go` — SDK 客户端初始化 + STS 前置检查
+- `internal/alicloud/client.go` — SDK 客户端初始化（ECS/VPC/STS）
+- `internal/alicloud/sts.go` — STS GetCallerIdentity 前置检查
 - `internal/alicloud/vpc.go` — VPC / VSwitch / SecurityGroup CRUD
-- `internal/alicloud/ecs.go` — ECS 实例 + SSH 密钥对 + 可用区选择
+- `internal/alicloud/ecs.go` — ECS 实例 + SSH 密钥对 + 可用区选择 + 等待 Running
 - `internal/alicloud/eip.go` — EIP 分配/绑定/解绑/释放
 - `tests/unit/alicloud_*_test.go` — 各模块单元测试
 
@@ -54,13 +55,14 @@
 - 为每个 SDK client 定义 interface，单元测试注入 mock
 - 安全组规则：22（用户 IP 或 0.0.0.0/0）、80、443
 - 可用区降级：ap-southeast-1a → 1b → 1c
-- 等待 ECS Running：5 秒轮询，5 分钟超时（参数可配置）
+- ECS 状态等待：5 秒轮询，5 分钟超时（参数可配置），等待实例变为 Running
 
 **TDD 测试**：
 - 缺少 AK/SK 返回错误
+- STS GetCallerIdentity 调用成功/失败
 - mock SDK 验证 VPC/ECS/EIP 创建参数和返回值
 - 可用区降级逻辑
-- 等待超时处理
+- ECS 状态等待超时处理
 
 ---
 
@@ -77,13 +79,16 @@
 - State 结构体与 design-oc.md 5.1.4 完全一致
 - `~/.cloudcode/` 目录自动创建（0700 权限）
 - Prompter 抽象 stdin/stdout，支持 mock 测试
+- Argon2id 参数（与 design-oc.md 5.5 一致）：iterations=1, salt_length=16, parallelism=8, memory=64KB
+- Secret 生成：crypto/rand 生成 32 字节随机数据，base64 编码输出
 
 **TDD 测试**：
 - SaveState → LoadState 往返一致
 - 文件不存在返回 nil
 - ResolveKeyPath 正确拼接
-- Argon2id 哈希格式
-- secret 长度和字符集
+- Argon2id 哈希格式（`$argon2id$v=19$m=64,t=1,p=8$...`）
+- GenerateSecret 长度正确（32 字节 → base64 输出）
+- GenerateSecret 随机性验证（多次生成不重复）
 
 ---
 
@@ -98,12 +103,14 @@
 
 **关键设计**：
 - SSHExecutor / SFTPUploader 接口抽象，支持 mock
+- WaitForSSH 前提：ECS 已 Running（步骤 2 的等待逻辑已完成），仅等待 SSH 服务就绪
 - Docker 安装命令超时 10 分钟，普通命令 5 分钟
 - 文件上传按 design-oc.md 5.1.6 映射表
 
 **TDD 测试**：
 - mock SSH 连接和命令执行
-- WaitForSSH 重试逻辑
+- WaitForSSH 重试逻辑（指数退避）
+- WaitForSSH 超时处理
 - SFTP 上传路径和目录创建
 
 ---
@@ -124,12 +131,28 @@
 - `tests/unit/template_render_test.go`
 
 **关键设计**：
-- TemplateData 结构体包含所有渲染字段
+- TemplateData 结构体包含所有渲染字段（见下方）
 - 静态文件原样输出，模板文件渲染后输出
 
+**TemplateData 字段**：
+```go
+type TemplateData struct {
+    Domain               string  // 域名
+    Username             string  // 管理员用户名
+    HashedPassword       string  // Argon2id 哈希后的密码
+    Email                string  // 管理员邮箱
+    SessionSecret        string  // Authelia session 密钥
+    StorageEncryptionKey string  // Authelia storage 加密密钥
+    OpenAIAPIKey         string  // OpenAI API Key
+    OpenAIBaseURL        string  // OpenAI Base URL（可选）
+    AnthropicAPIKey      string  // Anthropic API Key（可选）
+}
+```
+
 **TDD 测试**：
-- 每个模板的渲染结果验证
+- 每个模板的渲染结果验证（关键字段替换）
 - 嵌入文件非空检查
+- 静态文件与模板文件区分正确
 
 ---
 
@@ -144,10 +167,19 @@
 
 **编排流程**：
 1. PreflightCheck（环境变量/SDK/余额/配额）
-2. PromptConfig（域名/用户名/密码/API Key）
+2. PromptConfig（域名/用户名/密码/邮箱/API Key/SSH IP 限制）
 3. LoadState → 逐个检查并创建缺失资源 → 每步 SaveState
 4. WaitForSSH → InstallDocker → RenderTemplates → UploadFiles → StartCompose
 5. HealthCheck → PrintSuccess
+
+**PromptConfig 详细项**：
+- 域名：自有域名或留空使用 nip.io
+- 管理员用户名：默认 admin
+- 管理员密码：二次确认
+- 管理员邮箱
+- AI 模型提供商：OpenAI / Anthropic / 自定义
+- API Key / Base URL
+- SSH IP 限制：自动检测用户公网 IP（调用 https://api.ipify.org），询问是否限制 SSH 仅允许该 IP
 
 **TDD 测试**：mock 所有依赖，验证调用顺序、幂等性、--force 行为
 
@@ -186,8 +218,25 @@
 
 ## 步骤 10：端到端测试 + 文档更新
 
-- `tests/e2e/` — deploy → status → destroy 全流程（需真实阿里云账号）
-- 更新 `README.md`
+**新增文件**：
+- `tests/e2e/deploy_test.go` — deploy → status → destroy 全流程（需真实阿里云账号）
+- `README.md` — 项目说明
+
+**E2E 测试场景**（参考 design-oc.md 8.3）：
+
+| 场景 | 验证方式 |
+|------|----------|
+| 完整部署 | `cloudcode deploy` → 所有资源创建成功，HTTPS 可访问 |
+| 幂等性 | 部署后再次 `cloudcode deploy` → 检测已部署，提示使用 --force |
+| 中断恢复 | 部署中途 Ctrl+C → 再次 deploy → 从断点继续 |
+| 配置更新 | `cloudcode deploy --force` → 仅更新应用层，不重建云资源 |
+| 状态查看 | `cloudcode status` → 正确显示资源和容器状态 |
+| 资源销毁 | `cloudcode destroy` → 资源全部释放 |
+| dry-run | `cloudcode destroy --dry-run` → 仅显示将删除的资源 |
+| HTTPS 访问 | `curl -I https://<domain>` → 返回 302 重定向 |
+| 两步认证 | 浏览器登录 → 密码 → Passkey → 进入 OpenCode |
+
+**验证**：`go test ./...` 全部通过
 
 ---
 

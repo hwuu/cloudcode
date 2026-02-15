@@ -18,23 +18,27 @@
 
 10. 同步更新相关文档。
 
-11. 使用TDD开发模式开发。
+21. 使用TDD开发模式开发。
 
-12. 小步快跑，对一步都进行测试，并保证不影响现有用例。
+22. 小步快跑，对一步都进行测试，并保证不影响现有用例。
 
-13. 使用中文回答
+23. 使用中文回答
 
-14. 记得每次测试完后，清理下测试文件。
+24. 记得每次测试完后，清理下测试文件。
 
-15. 在 bug 修复时如果超过 2 次修复失败，请主动添加关键日志后再进行尝试修复，在我反馈修复后主动清除之前的日志信息。
+25. 在 bug 修复时如果超过 2 次修复失败，请主动添加关键日志后再进行尝试修复，在我反馈修复后主动清除之前的日志信息。
 
-16. 项目中的重试过2次以上环境配置问题或其他重复犯错的问题，请在项目的CLAUDE.md中做记录。常用的命令，请记录在项目的CLAUDE.md中。
+26. 项目中的重试过2次以上环境配置问题或其他重复犯错的问题，请在项目的CLAUDE.md中做记录。常用的命令，请记录在项目的CLAUDE.md中。
 
-17. 及时在 tests/unit 中添加单元测试
+27. 及时在 tests/unit 中添加单元测试
 
-18. 文档中如果要画流程框图，那么框图中的文字用英文，框线要对齐；其余内容保持中文
+28. 文档中如果要画流程框图，那么框图中的文字用英文，框线要对齐；其余内容保持中文
 
-19. 没有我的明确指令不许 commit / push。commit message 使用中文
+29. 没有我的明确指令不许 commit / push。commit message 使用中文
+
+30. **Commit Co-Author 规则**：每个 commit 必须添加 `Co-Authored-By` trailer，以便 GitHub 正确显示多个贡献者。格式如下：
+   - OpenCode 实现：`Co-Authored-By: OpenCode (SiliconFlow/GLM-5) <noreply@siliconflow.cn>`
+   - Claude Code 实现：`Co-Authored-By: Claude Code (Anthropic) <noreply@anthropic.com>`
 
 ---
 

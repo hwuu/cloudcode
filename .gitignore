@@ -1,6 +1,7 @@
 .claude
 .opencode
 state/
+dist/
 
 # Go
 bin/

@@ -7,6 +7,7 @@ require (
 	github.com/alibabacloud-go/ecs-20140526/v4 v4.26.10
 	github.com/alibabacloud-go/sts-20150401/v2 v2.1.0
 	github.com/alibabacloud-go/vpc-20160428/v6 v6.16.0
+	github.com/pkg/sftp v1.13.10
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/crypto v0.48.0
 )
@@ -25,7 +26,6 @@ require (
 	github.com/kr/fs v0.1.0 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
-	github.com/pkg/sftp v1.13.10 // indirect
 	github.com/spf13/pflag v1.0.9 // indirect
 	github.com/tjfoc/gmsm v1.4.1 // indirect
 	golang.org/x/net v0.49.0 // indirect

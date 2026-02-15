@@ -9,7 +9,7 @@
 | 3 | internal/config — 状态文件与交互输入 | ✅ 完成 | 2026-02-15 |
 | 4 | internal/remote — SSH/SFTP 远程操作 | ✅ 完成 | 2026-02-15 |
 | 5 | internal/template — 模板渲染 | ✅ 完成 | 2026-02-15 |
-| 6 | deploy 命令 — 串联完整部署流程 | ⏳ 待开始 | |
+| 6 | deploy 命令 — 串联完整部署流程 | ✅ 完成 | 2026-02-15 |
 | 7 | status 命令 | ⏳ 待开始 | |
 | 8 | destroy 命令 | ⏳ 待开始 | |
 | 9 | goreleaser + GitHub Actions | ⏳ 待开始 | |
@@ -207,3 +207,50 @@
 
 **Review 修复（2026-02-15）**：
 - env.tmpl 可选字段（OpenAIBaseURL/AnthropicAPIKey）为空时不输出对应行
+
+---
+
+## 步骤 6 详情
+
+**状态**：✅ 完成
+
+**新增文件**：
+- `internal/deploy/deploy.go` — Deployer 编排器，5 阶段部署流程，依赖注入支持 mock
+- `internal/remote/ssh_impl.go` — 真实 SSH/SFTP 实现 + GetPublicIP（ipify）
+- `tests/unit/deploy_test.go` — 6 个测试用例
+
+**修改文件**：
+- `cmd/cloudcode/main.go` — deploy 命令注入真实阿里云 SDK/SSH/SFTP + `--force` flag
+
+**核心依赖**：
+- `golang.org/x/crypto/ssh` — SSH 连接
+- `github.com/pkg/sftp` — SFTP 文件上传
+
+**编排流程**：
+1. `PreflightCheck` — STS GetCallerIdentity 验证凭证
+2. `PromptConfig` — 交互收集域名/用户名/密码/邮箱/AI 提供商/API Key/SSH IP 限制
+3. `CreateResources` — 幂等创建 VPC→VSwitch→SG→KeyPair→ECS→Start→WaitRunning→EIP→Associate，每步 SaveState
+4. `DeployApp` — WaitForSSH→InstallDocker→RenderTemplates→UploadFiles→docker compose up
+5. `HealthCheck` — SSH 执行 docker compose ps 检查容器状态
+
+**测试结果**：
+- `TestPreflightCheck_Success` — PASS
+- `TestPreflightCheck_STSError` — PASS
+- `TestCreateResources_FullDeploy` — PASS
+- `TestCreateResources_Idempotent` — PASS
+- `TestDeployApp_Success` — PASS
+- `TestHealthCheck_Success` — PASS
+
+**关键设计**：
+- Deployer 通过依赖注入接收所有外部依赖（ECS/VPC/STS/SSH/SFTP/GetPublicIP），完全可 mock
+- `--force` 跳过云资源创建，仅重新部署应用层
+- CreateResources 幂等：已存在的资源跳过，不重复创建
+- SSH IP 限制：调用 ipify 获取用户公网 IP，询问是否限制 SSH 仅允许该 IP
+- nip.io 域名：用户留空域名时自动使用 EIP.nip.io
+- WaitInterval/WaitTimeout 可配置，测试中使用 10ms/1s 避免慢测试
+- 健康检查失败不阻塞部署，仅输出警告
+
+**Review 修复（2026-02-15）**：
+- SSH IP 限制正确传递到 CreateResources → DefaultSecurityGroupRules
+- 删除多余的 CreateResourcesWithSSHIP 方法
+- Run 方法始终收集 PromptConfig，消除 --force 模式下 cfg 为 nil 的风险

@@ -5,6 +5,10 @@ import (
 	"os"
 	"runtime"
 
+	"github.com/hwuu/cloudcode/internal/alicloud"
+	"github.com/hwuu/cloudcode/internal/config"
+	"github.com/hwuu/cloudcode/internal/deploy"
+	"github.com/hwuu/cloudcode/internal/remote"
 	"github.com/spf13/cobra"
 )
 
@@ -31,14 +35,47 @@ func newRootCmd() *cobra.Command {
 }
 
 func newDeployCmd() *cobra.Command {
-	return &cobra.Command{
+	var force bool
+
+	cmd := &cobra.Command{
 		Use:   "deploy",
 		Short: "部署 OpenCode 到阿里云 ECS",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			fmt.Println("deploy: 尚未实现")
-			return nil
+			// 加载阿里云配置
+			cfg, err := alicloud.LoadConfigFromEnv()
+			if err != nil {
+				return fmt.Errorf("阿里云配置错误: %w", err)
+			}
+
+			// 创建 SDK 客户端
+			clients, err := alicloud.NewClients(cfg)
+			if err != nil {
+				return fmt.Errorf("初始化阿里云 SDK 失败: %w", err)
+			}
+
+			// 创建 Deployer
+			prompter := config.NewPrompter(os.Stdin, os.Stdout)
+			d := &deploy.Deployer{
+				ECS:      clients.ECS,
+				VPC:      clients.VPC,
+				STS:      clients.STS,
+				Prompter: prompter,
+				Output:   os.Stdout,
+				Region:   cfg.RegionID,
+				SSHDialFunc: func(host string, port int, user string, privateKey []byte) remote.DialFunc {
+					return remote.NewSSHDialFunc(host, port, user, privateKey)
+				},
+				SFTPFactory: remote.NewSFTPClient,
+				GetPublicIP: remote.GetPublicIP,
+			}
+
+			return d.Run(cmd.Context(), force)
 		},
 	}
+
+	cmd.Flags().BoolVar(&force, "force", false, "强制重新部署应用层（跳过云资源创建）")
+
+	return cmd
 }
 
 func newStatusCmd() *cobra.Command {

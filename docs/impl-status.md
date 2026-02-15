@@ -359,4 +359,5 @@ go test ./tests/e2e/ -tags e2e -v -timeout 30m
 - `ALICLOUD_ACCESS_KEY_ID` / `ALICLOUD_ACCESS_KEY_SECRET`（必须）
 - `ALICLOUD_REGION`（可选，默认 ap-southeast-1）
 - `E2E_DOMAIN`（可选，留空使用 nip.io）
-- `E2E_OPENAI_API_KEY`（必须）
+- `E2E_API_KEY`（必须，AI 提供商 API Key）
+- `E2E_API_BASE_URL`（可选，OpenAI 兼容 Base URL）

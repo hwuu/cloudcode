@@ -26,15 +26,16 @@ import (
 //   ALICLOUD_ACCESS_KEY_SECRET
 //   ALICLOUD_REGION (可选，默认 ap-southeast-1)
 //   E2E_DOMAIN (可选，留空使用 nip.io)
-//   E2E_OPENAI_API_KEY (必须)
+//   E2E_API_KEY (必须，AI 提供商 API Key)
+//   E2E_API_BASE_URL (可选，OpenAI 兼容 Base URL，如 https://api.siliconflow.cn/v1)
 
 func skipIfNoCredentials(t *testing.T) {
 	t.Helper()
 	if os.Getenv("ALICLOUD_ACCESS_KEY_ID") == "" || os.Getenv("ALICLOUD_ACCESS_KEY_SECRET") == "" {
 		t.Skip("跳过 E2E 测试：未设置 ALICLOUD_ACCESS_KEY_ID / ALICLOUD_ACCESS_KEY_SECRET")
 	}
-	if os.Getenv("E2E_OPENAI_API_KEY") == "" {
-		t.Skip("跳过 E2E 测试：未设置 E2E_OPENAI_API_KEY")
+	if os.Getenv("E2E_API_KEY") == "" {
+		t.Skip("跳过 E2E 测试：未设置 E2E_API_KEY")
 	}
 }
 
@@ -149,7 +150,8 @@ func TestE2E_FullLifecycle(t *testing.T) {
 		Username:     "e2e-admin",
 		Password:     "E2eTestPass123!",
 		Email:        "e2e@example.com",
-		OpenAIAPIKey: os.Getenv("E2E_OPENAI_API_KEY"),
+		OpenAIAPIKey: os.Getenv("E2E_API_KEY"),
+		OpenAIBaseURL: os.Getenv("E2E_API_BASE_URL"),
 	}
 
 	if err := deployer.DeployApp(ctx, state, deployConfig); err != nil {

@@ -122,8 +122,8 @@ func TestRenderAutheliaConfig(t *testing.T) {
 		substr string
 		desc   string
 	}{
-		{"secret: test-session-secret", "session secret"},
-		{"encryption_key: test-storage-key", "storage encryption key"},
+		{"secret: 'test-session-secret'", "session secret"},
+		{"encryption_key: 'test-storage-key'", "storage encryption key"},
 		{"domain: opencode.example.com", "domain in session cookies"},
 		{"authelia_url: https://opencode.example.com/auth", "authelia URL"},
 		{"policy: two_factor", "two_factor policy"},

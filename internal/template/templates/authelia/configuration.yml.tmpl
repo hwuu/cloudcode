@@ -15,7 +15,7 @@ authentication_backend:
       memory: 64
 
 session:
-  secret: {{ .SessionSecret }}
+  secret: '{{ .SessionSecret }}'
   expiration: 12h
   inactivity: 30m
   cookies:
@@ -25,7 +25,7 @@ session:
       same_site: lax
 
 storage:
-  encryption_key: {{ .StorageEncryptionKey }}
+  encryption_key: '{{ .StorageEncryptionKey }}'
   local:
     path: /config/db.sqlite3
 

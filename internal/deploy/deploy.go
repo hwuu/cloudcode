@@ -565,7 +565,20 @@ func (d *Deployer) saveState(state *config.State) error {
 }
 
 func (d *Deployer) readSSHKey(state *config.State) ([]byte, error) {
-	keyPath := filepath.Join(d.getStateDir(), "ssh_key")
+	return readSSHKeyFrom(d.getStateDir(), state)
+}
+
+// readSSHKeyFrom 从指定目录读取 SSH 私钥（共享函数）
+func readSSHKeyFrom(stateDir string, state *config.State) ([]byte, error) {
+	dir := stateDir
+	if dir == "" {
+		var err error
+		dir, err = config.GetStateDir()
+		if err != nil {
+			return nil, err
+		}
+	}
+	keyPath := filepath.Join(dir, "ssh_key")
 	data, err := os.ReadFile(keyPath)
 	if err != nil {
 		return nil, fmt.Errorf("读取 SSH 私钥失败: %w", err)

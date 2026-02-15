@@ -83,21 +83,51 @@ func newStatusCmd() *cobra.Command {
 		Use:   "status",
 		Short: "查看部署状态",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			fmt.Println("status: 尚未实现")
-			return nil
+			s := &deploy.StatusRunner{
+				Output: os.Stdout,
+				SSHDialFunc: func(host string, port int, user string, privateKey []byte) remote.DialFunc {
+					return remote.NewSSHDialFunc(host, port, user, privateKey)
+				},
+			}
+			return s.Run(cmd.Context())
 		},
 	}
 }
 
 func newDestroyCmd() *cobra.Command {
-	return &cobra.Command{
+	var force, dryRun bool
+
+	cmd := &cobra.Command{
 		Use:   "destroy",
 		Short: "销毁所有云资源",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			fmt.Println("destroy: 尚未实现")
-			return nil
+			cfg, err := alicloud.LoadConfigFromEnv()
+			if err != nil {
+				return fmt.Errorf("阿里云配置错误: %w", err)
+			}
+
+			clients, err := alicloud.NewClients(cfg)
+			if err != nil {
+				return fmt.Errorf("初始化阿里云 SDK 失败: %w", err)
+			}
+
+			prompter := config.NewPrompter(os.Stdin, os.Stdout)
+			d := &deploy.Destroyer{
+				ECS:      clients.ECS,
+				VPC:      clients.VPC,
+				Prompter: prompter,
+				Output:   os.Stdout,
+				Region:   cfg.RegionID,
+			}
+
+			return d.Run(cmd.Context(), force, dryRun)
 		},
 	}
+
+	cmd.Flags().BoolVar(&force, "force", false, "跳过确认直接删除")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "仅展示将要删除的资源，不实际删除")
+
+	return cmd
 }
 
 func newVersionCmd() *cobra.Command {

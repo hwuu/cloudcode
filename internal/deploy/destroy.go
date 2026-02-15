@@ -83,11 +83,14 @@ func (d *Destroyer) Run(ctx context.Context, force, dryRun bool) error {
 
 	d.printf("\n开始删除资源...\n")
 
+	var failedResources []string
+
 	// 1. 解绑 EIP
 	if state.Resources.EIP.ID != "" && state.Resources.ECS.ID != "" {
 		d.printf("  解绑 EIP...")
 		if err := alicloud.UnassociateEIPFromInstance(d.VPC, state.Resources.EIP.ID, state.Resources.ECS.ID, d.Region); err != nil {
 			d.printf(" ⚠ %v\n", err)
+			failedResources = append(failedResources, fmt.Sprintf("解绑 EIP: %v", err))
 		} else {
 			d.printf(" ✓\n")
 		}
@@ -98,6 +101,7 @@ func (d *Destroyer) Run(ctx context.Context, force, dryRun bool) error {
 		d.printf("  释放 EIP (%s)...", state.Resources.EIP.ID)
 		if err := alicloud.ReleaseEIP(d.VPC, state.Resources.EIP.ID); err != nil {
 			d.printf(" ⚠ %v\n", err)
+			failedResources = append(failedResources, fmt.Sprintf("释放 EIP %s: %v", state.Resources.EIP.ID, err))
 		} else {
 			state.Resources.EIP = config.EIPResource{}
 			_ = d.saveState(state)
@@ -110,6 +114,7 @@ func (d *Destroyer) Run(ctx context.Context, force, dryRun bool) error {
 		d.printf("  停止 ECS (%s)...", state.Resources.ECS.ID)
 		if err := alicloud.StopECSInstance(d.ECS, state.Resources.ECS.ID); err != nil {
 			d.printf(" ⚠ %v\n", err)
+			failedResources = append(failedResources, fmt.Sprintf("停止 ECS %s: %v", state.Resources.ECS.ID, err))
 		} else {
 			d.printf(" ✓\n")
 		}
@@ -120,6 +125,7 @@ func (d *Destroyer) Run(ctx context.Context, force, dryRun bool) error {
 		d.printf("  删除 ECS (%s)...", state.Resources.ECS.ID)
 		if err := alicloud.DeleteECSInstance(d.ECS, state.Resources.ECS.ID); err != nil {
 			d.printf(" ⚠ %v\n", err)
+			failedResources = append(failedResources, fmt.Sprintf("删除 ECS %s: %v", state.Resources.ECS.ID, err))
 		} else {
 			state.Resources.ECS = config.ECSResource{}
 			_ = d.saveState(state)
@@ -132,6 +138,7 @@ func (d *Destroyer) Run(ctx context.Context, force, dryRun bool) error {
 		d.printf("  删除 SSH 密钥对 (%s)...", state.Resources.SSHKeyPair.Name)
 		if err := alicloud.DeleteSSHKeyPair(d.ECS, state.Resources.SSHKeyPair.Name); err != nil {
 			d.printf(" ⚠ %v\n", err)
+			failedResources = append(failedResources, fmt.Sprintf("删除密钥对 %s: %v", state.Resources.SSHKeyPair.Name, err))
 		} else {
 			state.Resources.SSHKeyPair = config.SSHKeyPairResource{}
 			_ = d.saveState(state)
@@ -144,6 +151,7 @@ func (d *Destroyer) Run(ctx context.Context, force, dryRun bool) error {
 		d.printf("  删除安全组 (%s)...", state.Resources.SecurityGroup.ID)
 		if err := alicloud.DeleteSecurityGroup(d.ECS, state.Resources.SecurityGroup.ID, d.Region); err != nil {
 			d.printf(" ⚠ %v\n", err)
+			failedResources = append(failedResources, fmt.Sprintf("删除安全组 %s: %v", state.Resources.SecurityGroup.ID, err))
 		} else {
 			state.Resources.SecurityGroup = config.SecurityGroupResource{}
 			_ = d.saveState(state)
@@ -156,6 +164,7 @@ func (d *Destroyer) Run(ctx context.Context, force, dryRun bool) error {
 		d.printf("  删除交换机 (%s)...", state.Resources.VSwitch.ID)
 		if err := alicloud.DeleteVSwitch(d.VPC, state.Resources.VSwitch.ID); err != nil {
 			d.printf(" ⚠ %v\n", err)
+			failedResources = append(failedResources, fmt.Sprintf("删除交换机 %s: %v", state.Resources.VSwitch.ID, err))
 		} else {
 			state.Resources.VSwitch = config.VSwitchResource{}
 			_ = d.saveState(state)
@@ -168,6 +177,7 @@ func (d *Destroyer) Run(ctx context.Context, force, dryRun bool) error {
 		d.printf("  删除 VPC (%s)...", state.Resources.VPC.ID)
 		if err := alicloud.DeleteVPC(d.VPC, state.Resources.VPC.ID); err != nil {
 			d.printf(" ⚠ %v\n", err)
+			failedResources = append(failedResources, fmt.Sprintf("删除 VPC %s: %v", state.Resources.VPC.ID, err))
 		} else {
 			state.Resources.VPC = config.VPCResource{}
 			_ = d.saveState(state)
@@ -182,6 +192,14 @@ func (d *Destroyer) Run(ctx context.Context, force, dryRun bool) error {
 	// 10. 删除 state 文件
 	if err := d.deleteState(); err != nil {
 		d.printf("  ⚠ 删除 state 文件失败: %v\n", err)
+	}
+
+	if len(failedResources) > 0 {
+		d.printf("\n⚠ 以下资源删除失败，请手动清理:\n")
+		for _, msg := range failedResources {
+			d.printf("  - %s\n", msg)
+		}
+		return fmt.Errorf("%d 个资源删除失败", len(failedResources))
 	}
 
 	d.printf("\n✅ 所有资源已清理完毕。\n")

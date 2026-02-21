@@ -268,11 +268,18 @@ func newLogsCmd() *cobra.Command {
 	return cmd
 }
 
-// newSSHCmd 快捷 SSH 登录 ECS
+// newSSHCmd 快捷 SSH 登录 ECS 或进入容器
 func newSSHCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "ssh",
-		Short: "SSH 登录到 ECS 实例",
+		Use:   "ssh [target]",
+		Short: "SSH 登录到 ECS 实例或容器",
+		Long: `SSH 登录到 ECS 实例或指定容器。
+
+target 可选值：
+  host       登录 ECS 宿主机（默认）
+  opencode   进入 opencode 容器
+  authelia   进入 authelia 容器
+  caddy      进入 caddy 容器`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			state, _, err := loadStateAndKey("")
 			if err != nil {
@@ -280,14 +287,27 @@ func newSSHCmd() *cobra.Command {
 			}
 			dir, _ := config.GetStateDir()
 			keyPath := dir + "/ssh_key"
+
+			target := "host"
+			if len(args) > 0 {
+				target = args[0]
+			}
+
 			sshArgs := []string{
 				"ssh",
 				"-i", keyPath,
 				"-o", "StrictHostKeyChecking=no",
 				"-o", "UserKnownHostsFile=/dev/null",
 				"-o", "LogLevel=ERROR",
+				"-t",
 				"root@" + state.Resources.EIP.IP,
 			}
+
+			if target != "host" {
+				// 进入容器的交互式 shell
+				sshArgs = append(sshArgs, fmt.Sprintf("cd ~/cloudcode && docker compose exec %s sh -c 'if command -v bash >/dev/null; then bash; else sh; fi'", target))
+			}
+
 			return syscall.Exec(sshBinary(), sshArgs, os.Environ())
 		},
 	}

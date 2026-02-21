@@ -43,8 +43,8 @@ func (s *StatusRunner) Run(ctx context.Context) error {
 
 	s.printf("CloudCode 部署状态\n")
 	s.printf("─────────────────────────────────────────\n")
-	s.printf("%s %s\n", padRight("区域:", 10), state.Region)
-	s.printf("%s %s\n", padRight("创建时间:", 10), state.CreatedAt)
+	s.printf("%s %s\n", padRight("区域:", 14), state.Region)
+	s.printf("%s %s\n", padRight("创建时间:", 14), state.CreatedAt)
 	s.printf("\n")
 
 	// 云资源
@@ -63,9 +63,9 @@ func (s *StatusRunner) Run(ctx context.Context) error {
 	// 应用信息
 	if state.CloudCode.Domain != "" {
 		s.printf("\n应用:\n")
-		s.printf("  %s %s\n", padRight("域名:", 10), state.CloudCode.Domain)
-		s.printf("  %s %s\n", padRight("用户:", 10), state.CloudCode.Username)
-		s.printf("  %s https://%s\n", padRight("地址:", 10), state.CloudCode.Domain)
+		s.printf("  %s %s\n", padRight("域名:", 12), state.CloudCode.Domain)
+		s.printf("  %s %s\n", padRight("用户:", 12), state.CloudCode.Username)
+		s.printf("  %s https://%s\n", padRight("地址:", 12), state.CloudCode.Domain)
 	}
 
 	// 容器状态（通过 SSH）

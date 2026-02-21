@@ -36,6 +36,7 @@ services:
     volumes:
       - opencode_workspace:/home/opencode/workspace
       - opencode_config:/home/opencode/.config/opencode
+      - opencode_data:/home/opencode/.local/share/opencode
     env_file:
       - .env
     expose:
@@ -48,6 +49,7 @@ volumes:
   caddy_config:
   opencode_workspace:
   opencode_config:
+  opencode_data:
 
 networks:
   cloudcode-net:

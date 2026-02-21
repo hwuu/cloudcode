@@ -10,13 +10,13 @@ Error: 启动 Docker Compose 失败: context deadline exceeded
 ```
 
 **原因：**
-首次部署时需要构建 OpenCode 镜像（Dockerfile.opencode），可能超过 10 分钟超时限制。
+首次部署时需要从 ghcr.io 拉取 OpenCode 镜像（约 300MB），网络较慢时可能超时。
 
 **解决方案：**
 1. SSH 到 ECS 手动运行，查看详细进度：
    ```bash
    ssh -i ~/.cloudcode/ssh_key root@<EIP>
-   cd ~/cloudcode && docker compose up -d --build
+   cd ~/cloudcode && docker compose pull && docker compose up -d
    ```
 
 2. 构建完成后检查容器状态：

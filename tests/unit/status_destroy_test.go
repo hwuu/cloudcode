@@ -110,7 +110,7 @@ func TestStatus_WithContainers(t *testing.T) {
 	}
 
 	out := output.String()
-	if !strings.Contains(out, "caddy running") {
+	if !strings.Contains(out, "caddy") || !strings.Contains(out, "running") {
 		t.Error("expected container status in output")
 	}
 }

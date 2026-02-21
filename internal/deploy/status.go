@@ -43,8 +43,8 @@ func (s *StatusRunner) Run(ctx context.Context) error {
 
 	s.printf("CloudCode 部署状态\n")
 	s.printf("─────────────────────────────────────────\n")
-	s.printf("区域: %s\n", state.Region)
-	s.printf("创建时间: %s\n", state.CreatedAt)
+	s.printf("%s %s\n", padRight("区域:", 10), state.Region)
+	s.printf("%s %s\n", padRight("创建时间:", 10), state.CreatedAt)
 	s.printf("\n")
 
 	// 云资源
@@ -63,9 +63,9 @@ func (s *StatusRunner) Run(ctx context.Context) error {
 	// 应用信息
 	if state.CloudCode.Domain != "" {
 		s.printf("\n应用:\n")
-		s.printf("  域名: %s\n", state.CloudCode.Domain)
-		s.printf("  用户: %s\n", state.CloudCode.Username)
-		s.printf("  地址: https://%s\n", state.CloudCode.Domain)
+		s.printf("  %s %s\n", padRight("域名:", 10), state.CloudCode.Domain)
+		s.printf("  %s %s\n", padRight("用户:", 10), state.CloudCode.Username)
+		s.printf("  %s https://%s\n", padRight("地址:", 10), state.CloudCode.Domain)
 	}
 
 	// 容器状态（通过 SSH）
@@ -134,7 +134,12 @@ func (s *StatusRunner) checkContainers(ctx context.Context, state *config.State)
 
 	for _, line := range strings.Split(strings.TrimSpace(output), "\n") {
 		if line != "" {
-			s.printf("  %s\n", line)
+			parts := strings.Fields(line)
+			if len(parts) >= 2 {
+				s.printf("  %s %s\n", padRight(parts[0], 12), strings.Join(parts[1:], " "))
+			} else {
+				s.printf("  %s\n", line)
+			}
 		}
 	}
 

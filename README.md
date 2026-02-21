@@ -82,7 +82,9 @@ cloudcode logs                         # 查看所有容器日志（默认最后
 cloudcode logs authelia                # 查看指定容器日志
 cloudcode logs -f                      # 实时跟踪日志
 cloudcode logs -n 100 opencode         # 查看最后 100 行
-cloudcode ssh                          # SSH 登录到 ECS 实例
+cloudcode ssh                          # SSH 登录到 ECS 宿主机
+cloudcode ssh opencode                 # 进入 opencode 容器
+cloudcode ssh authelia                 # 进入 authelia 容器
 cloudcode exec opencode opencode -v    # 在容器内执行命令
 ```
 

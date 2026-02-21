@@ -270,7 +270,7 @@ func newLogsCmd() *cobra.Command {
 
 // newSSHCmd 快捷 SSH 登录 ECS 或进入容器
 func newSSHCmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "ssh [target]",
 		Short: "SSH 登录到 ECS 实例或容器",
 		Long: `SSH 登录到 ECS 实例或指定容器。
@@ -280,6 +280,7 @@ target 可选值：
   opencode   进入 opencode 容器
   authelia   进入 authelia 容器
   caddy      进入 caddy 容器`,
+		ValidArgs: []string{"host", "opencode", "authelia", "caddy"},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			state, _, err := loadStateAndKey("")
 			if err != nil {
@@ -311,6 +312,7 @@ target 可选值：
 			return syscall.Exec(sshBinary(), sshArgs, os.Environ())
 		},
 	}
+	return cmd
 }
 
 // newExecCmd 在容器内执行命令

@@ -417,3 +417,42 @@ destroy 全部 7 个资源清理成功
 
 **实现方式**：共享 `sshRunCommand` 辅助函数，从 state 读取 EIP/私钥 → SSH 连接 → 执行命令。
 `ssh` 和 `logs -f` 使用 `syscall.Exec` 替换进程，支持交互式终端。
+
+**补充改进**：
+- `ssh` 命令支持 target 参数：`cloudcode ssh opencode` 直接进入容器（自动选择 bash/sh）
+- `ssh` 命令添加 `ValidArgs` 支持 tab 补全（host/opencode/authelia/caddy）
+- `otc` 命令直接输出 notification.txt 全部内容
+
+---
+
+## 代码注释 + 密码掩码（2026-02-16）
+
+- 全部 17 个 Go 源文件添加注释（package 级别说明、导出类型/函数、常量含义）
+- 密码输入改为掩码显示（每个字符显示 `*`，支持退格删除）
+
+---
+
+## Shell 补全 + install.sh（2026-02-16）
+
+- Cobra 内置 `completion` 子命令，支持 bash/zsh
+- `install.sh` 安装后自动检测 shell 类型，将补全脚本写入 rc 文件
+
+---
+
+## v0.1.0 Release（2026-02-21）
+
+首个正式发布版本，通过 goreleaser 构建 4 个平台：
+
+| OS | Arch |
+|------|------|
+| linux | amd64 |
+| linux | arm64 |
+| darwin (macOS) | amd64 |
+| darwin (macOS) | arm64 |
+
+Release: https://github.com/hwuu/cloudcode/releases/tag/v0.1.0
+
+安装方式：
+```bash
+curl -fsSL https://github.com/hwuu/cloudcode/releases/latest/download/install.sh | bash
+```

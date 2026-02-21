@@ -9,6 +9,7 @@ import (
 	"io"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/hwuu/cloudcode/internal/config"
 	"github.com/hwuu/cloudcode/internal/remote"
@@ -54,9 +55,9 @@ func (s *StatusRunner) Run(ctx context.Context) error {
 	s.printResource("SSH 密钥对", state.Resources.SSHKeyPair.Name)
 	s.printResource("ECS 实例", state.Resources.ECS.ID)
 	if state.Resources.EIP.ID != "" {
-		s.printf("  %-12s %s (IP: %s)\n", "EIP", state.Resources.EIP.ID, state.Resources.EIP.IP)
+		s.printf("  %s %s (IP: %s)\n", padRight("EIP", 12), state.Resources.EIP.ID, state.Resources.EIP.IP)
 	} else {
-		s.printf("  %-12s ❌ 未创建\n", "EIP")
+		s.printf("  %s ❌ 未创建\n", padRight("EIP", 12))
 	}
 
 	// 应用信息
@@ -80,11 +81,35 @@ func (s *StatusRunner) Run(ctx context.Context) error {
 }
 
 func (s *StatusRunner) printResource(name, id string) {
+	padded := padRight(name, 12)
 	if id != "" {
-		s.printf("  %-12s %s\n", name, id)
+		s.printf("  %s %s\n", padded, id)
 	} else {
-		s.printf("  %-12s ❌ 未创建\n", name)
+		s.printf("  %s ❌ 未创建\n", padded)
 	}
+}
+
+// displayWidth 计算字符串在终端中的显示宽度（中文字符占 2 列）
+func displayWidth(s string) int {
+	w := 0
+	for _, r := range s {
+		if unicode.Is(unicode.Han, r) || unicode.Is(unicode.Hangul, r) ||
+			unicode.Is(unicode.Katakana, r) || unicode.Is(unicode.Hiragana, r) {
+			w += 2
+		} else {
+			w++
+		}
+	}
+	return w
+}
+
+// padRight 按显示宽度右填充空格到指定列数
+func padRight(s string, width int) string {
+	dw := displayWidth(s)
+	if dw >= width {
+		return s
+	}
+	return s + strings.Repeat(" ", width-dw)
 }
 
 func (s *StatusRunner) checkContainers(ctx context.Context, state *config.State) error {

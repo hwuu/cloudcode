@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"golang.org/x/crypto/argon2"
+	"golang.org/x/term"
 )
 
 const (
@@ -147,14 +148,39 @@ func GenerateSecret() (string, error) {
 }
 
 func readPassword(fd int) ([]byte, error) {
-	return readPasswordFallback()
+	oldState, err := term.MakeRaw(fd)
+	if err != nil {
+		return term.ReadPassword(fd)
+	}
+	defer term.Restore(fd, oldState)
+
+	var password []byte
+	buf := make([]byte, 1)
+	for {
+		n, err := os.Stdin.Read(buf)
+		if err != nil || n == 0 {
+			break
+		}
+		ch := buf[0]
+		switch {
+		case ch == '\r' || ch == '\n':
+			return password, nil
+		case ch == 3: // Ctrl+C
+			return nil, fmt.Errorf("interrupted")
+		case ch == 127 || ch == 8: // Backspace / Delete
+			if len(password) > 0 {
+				password = password[:len(password)-1]
+				os.Stdout.Write([]byte("\b \b"))
+			}
+		default:
+			password = append(password, ch)
+			os.Stdout.Write([]byte("*"))
+		}
+	}
+	return password, nil
 }
 
 func readPasswordFallback() ([]byte, error) {
 	reader := bufio.NewReader(os.Stdin)
 	return reader.ReadBytes('\n')
 }
-
-// TODO: readPassword 当前实现是空壳，密码会明文回显。
-// 后续应使用 golang.org/x/term.ReadPassword() 实现终端密码隐藏输入。
-// 当前 mock 测试走 scanner 分支不影响测试，但真实终端体验不佳。

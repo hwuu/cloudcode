@@ -42,7 +42,6 @@ var templateFiles = []string{
 // 静态文件（原样输出）
 var staticFiles = []string{
 	"templates/docker-compose.yml",
-	"templates/Dockerfile.opencode",
 }
 
 // RenderTemplate 渲染指定模板文件，返回渲染后的内容
@@ -87,8 +86,7 @@ func RenderAll(data *TemplateData) (map[string][]byte, error) {
 	}
 
 	staticMapping := map[string]string{
-		"templates/docker-compose.yml":  "~/cloudcode/docker-compose.yml",
-		"templates/Dockerfile.opencode": "~/cloudcode/Dockerfile.opencode",
+		"templates/docker-compose.yml": "~/cloudcode/docker-compose.yml",
 	}
 
 	for src, dst := range templateMapping {

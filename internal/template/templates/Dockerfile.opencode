@@ -39,7 +39,7 @@ RUN ARCH=$(uname -m) && \
     if [ "$OPENCODE_VERSION" = "latest" ]; then \
         curl -fsSL https://opencode.ai/install | bash; \
     else \
-        curl -fsSL -o /tmp/opencode "https://github.com/opencode-ai/opencode/releases/download/v${OPENCODE_VERSION}/opencode-linux-${ARCH}" \
+        curl -fsSL -o /tmp/opencode "https://github.com/anomalyco/opencode/releases/download/v${OPENCODE_VERSION}/opencode-linux-${ARCH}" \
         && chmod +x /tmp/opencode \
         && sudo mv /tmp/opencode /usr/local/bin/; \
     fi

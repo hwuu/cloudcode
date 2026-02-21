@@ -78,7 +78,7 @@
 | 阿里云 CLI | 云资源管理 | aliyun-cli |
 | Docker | 容器运行时 | Docker CE 27.x |
 | Docker Compose | 容器编排 | Compose v2 |
-| OpenCode | AI 编程助手 | opencode-ai npm 包 |
+| OpenCode | AI 编程助手 | anomalyco/opencode |
 | GitHub CLI | GitHub 集成 | gh |
 | Nginx (可选) | 反向代理 + HTTPS | nginx:alpine |
 

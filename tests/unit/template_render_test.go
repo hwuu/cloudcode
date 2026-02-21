@@ -173,20 +173,8 @@ func TestGetStaticFile_DockerCompose(t *testing.T) {
 	if !strings.Contains(s, "opencode:") {
 		t.Error("docker-compose should contain opencode service")
 	}
-}
-
-func TestGetStaticFile_Dockerfile(t *testing.T) {
-	content, err := tmpl.GetStaticFile("templates/Dockerfile.opencode")
-	if err != nil {
-		t.Fatalf("GetStaticFile failed: %v", err)
-	}
-
-	s := string(content)
-	if !strings.Contains(s, "FROM ubuntu:24.04") {
-		t.Error("Dockerfile should be based on ubuntu:24.04")
-	}
-	if !strings.Contains(s, "EXPOSE 4096") {
-		t.Error("Dockerfile should expose port 4096")
+	if !strings.Contains(s, "image: ghcr.io/hwuu/cloudcode-opencode:latest") {
+		t.Error("docker-compose opencode service should use pre-built image")
 	}
 }
 
@@ -201,7 +189,6 @@ func TestRenderAll(t *testing.T) {
 		"~/cloudcode/docker-compose.yml",
 		"~/cloudcode/Caddyfile",
 		"~/cloudcode/.env",
-		"~/cloudcode/Dockerfile.opencode",
 		"~/cloudcode/authelia/configuration.yml",
 		"~/cloudcode/authelia/users_database.yml",
 	}

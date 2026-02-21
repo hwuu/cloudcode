@@ -1,6 +1,6 @@
 # CloudCode
 
-一键部署 [OpenCode](https://github.com/opencode-ai/opencode) 到阿里云 ECS，带 HTTPS + Authelia 两步认证。
+一键部署 [OpenCode](https://github.com/anomalyco/opencode) 到阿里云 ECS，带 HTTPS + Authelia 两步认证。
 
 ## 功能
 

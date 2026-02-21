@@ -440,7 +440,7 @@ func (d *Deployer) DeployApp(ctx context.Context, state *config.State, cfg *Depl
 	d.printf("  ✓ 配置文件已上传\n")
 
 	// docker compose up
-	composeCmd := "cd ~/cloudcode && docker compose up -d --build"
+	composeCmd := "cd ~/cloudcode && docker compose pull && docker compose up -d"
 	composeCtx, composeCancel := context.WithTimeout(ctx, remote.DockerInstallTimeout)
 	defer composeCancel()
 	if _, err := sshClient.RunCommand(composeCtx, composeCmd); err != nil {

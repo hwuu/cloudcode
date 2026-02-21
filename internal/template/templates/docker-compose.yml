@@ -30,9 +30,7 @@ services:
       - cloudcode-net
 
   opencode:
-    build:
-      context: .
-      dockerfile: Dockerfile.opencode
+    image: ghcr.io/hwuu/cloudcode-opencode:latest
     container_name: opencode
     restart: unless-stopped
     volumes:

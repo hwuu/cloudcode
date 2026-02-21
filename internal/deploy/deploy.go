@@ -69,7 +69,7 @@ func (d *Deployer) printf(format string, args ...interface{}) {
 
 // PreflightCheck 前置检查：验证阿里云凭证
 func (d *Deployer) PreflightCheck(ctx context.Context) error {
-	d.printf("[1/6] 检查环境...\n")
+	d.printf("[1/5] 检查环境...\n")
 
 	identity, err := alicloud.GetCallerIdentity(d.STS)
 	if err != nil {
@@ -82,7 +82,7 @@ func (d *Deployer) PreflightCheck(ctx context.Context) error {
 
 // PromptConfig 交互式收集部署配置
 func (d *Deployer) PromptConfig(ctx context.Context) (*DeployConfig, error) {
-	d.printf("\n[2/6] 配置访问信息:\n")
+	d.printf("\n[2/5] 配置访问信息:\n")
 
 	cfg := &DeployConfig{}
 
@@ -114,72 +114,15 @@ func (d *Deployer) PromptConfig(ctx context.Context) (*DeployConfig, error) {
 	}
 	cfg.Password = password
 
-	// 邮箱
-	email, err := d.Prompter.Prompt("请输入管理员邮箱: ")
-	if err != nil {
-		return nil, err
-	}
-	cfg.Email = email
-
-	// AI 模型提供商
-	d.printf("\n[3/6] 配置 OpenCode:\n")
-	providerIdx, err := d.Prompter.PromptSelect("请选择 AI 模型提供商:", []string{"OpenAI", "Anthropic", "自定义"})
-	if err != nil {
-		return nil, err
-	}
-
-	switch providerIdx {
-	case 0: // OpenAI
-		apiKey, err := d.Prompter.PromptPassword("请输入 OpenAI API Key: ")
-		if err != nil {
-			return nil, err
-		}
-		cfg.OpenAIAPIKey = apiKey
-		baseURL, err := d.Prompter.PromptWithDefault("请输入 Base URL", "https://api.openai.com/v1")
-		if err != nil {
-			return nil, err
-		}
-		if baseURL != "https://api.openai.com/v1" {
-			cfg.OpenAIBaseURL = baseURL
-		}
-	case 1: // Anthropic
-		apiKey, err := d.Prompter.PromptPassword("请输入 Anthropic API Key: ")
-		if err != nil {
-			return nil, err
-		}
-		cfg.AnthropicAPIKey = apiKey
-	case 2: // 自定义
-		apiKey, err := d.Prompter.PromptPassword("请输入 API Key: ")
-		if err != nil {
-			return nil, err
-		}
-		cfg.OpenAIAPIKey = apiKey
-		baseURL, err := d.Prompter.Prompt("请输入 Base URL: ")
-		if err != nil {
-			return nil, err
-		}
-		cfg.OpenAIBaseURL = baseURL
-	}
-
-	// SSH IP 限制
-	publicIP, err := d.GetPublicIP()
-	if err == nil && publicIP != "" {
-		d.printf("\n检测到您的公网 IP: %s\n", publicIP)
-		restrict, err := d.Prompter.PromptConfirm("是否限制 SSH 仅允许该 IP 访问?")
-		if err != nil {
-			return nil, err
-		}
-		if restrict {
-			cfg.SSHIP = publicIP + "/32"
-		}
-	}
+	// 邮箱使用默认值
+	cfg.Email = username + "@localhost"
 
 	return cfg, nil
 }
 
 // CreateResources 创建云资源（幂等：跳过已存在的资源）
 func (d *Deployer) CreateResources(ctx context.Context, state *config.State, sshIP string) error {
-	d.printf("\n[4/6] 创建云资源:\n")
+	d.printf("\n[3/5] 创建云资源:\n")
 
 	// VPC
 	if !state.HasVPC() {
@@ -340,7 +283,7 @@ func (d *Deployer) CreateResources(ctx context.Context, state *config.State, ssh
 
 // DeployApp 部署应用（SSH → Docker → 模板 → 上传 → compose up）
 func (d *Deployer) DeployApp(ctx context.Context, state *config.State, cfg *DeployConfig) error {
-	d.printf("\n[5/6] 部署应用:\n")
+	d.printf("\n[4/5] 部署应用:\n")
 
 	// 读取 SSH 私钥
 	privateKey, err := d.readSSHKey(state)
@@ -456,7 +399,7 @@ func (d *Deployer) DeployApp(ctx context.Context, state *config.State, cfg *Depl
 
 // HealthCheck 健康检查：通过 SSH 检查容器状态
 func (d *Deployer) HealthCheck(ctx context.Context, state *config.State) error {
-	d.printf("\n[6/6] 验证服务:\n")
+	d.printf("\n[5/5] 验证服务:\n")
 
 	privateKey, err := d.readSSHKey(state)
 	if err != nil {

@@ -224,6 +224,7 @@ func newLogsCmd() *cobra.Command {
 		Use:   "logs [container]",
 		Short: "查看容器日志",
 		Long:  "查看 Docker Compose 容器日志。可选指定容器名（authelia/caddy/opencode）。",
+		ValidArgs: []string{"authelia", "caddy", "opencode"},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			composeCmd := "cd ~/cloudcode && docker compose logs"
 			if tail > 0 {
@@ -322,6 +323,7 @@ func newExecCmd() *cobra.Command {
 		Short: "在容器内执行命令",
 		Long:  "在指定容器内执行命令。例如: cloudcode exec opencode opencode --version",
 		Args:  cobra.MinimumNArgs(2),
+		ValidArgs: []string{"authelia", "caddy", "opencode"},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			container := args[0]
 			containerCmd := strings.Join(args[1:], " ")

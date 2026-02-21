@@ -13,4 +13,4 @@ vendor/
 *.dylib
 *.test
 *.out
-cloudcode
+/cloudcode

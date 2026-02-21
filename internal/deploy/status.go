@@ -1,5 +1,8 @@
 package deploy
 
+// status.go 查询并展示当前部署状态：云资源信息 + 容器运行状态。
+// 通过 SSH 连接 ECS 执行 docker compose ps 获取容器状态。
+
 import (
 	"context"
 	"fmt"

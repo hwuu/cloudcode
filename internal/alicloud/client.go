@@ -1,3 +1,5 @@
+// Package alicloud 封装阿里云 SDK 调用，提供 ECS/VPC/STS/EIP 等资源的创建、查询和删除操作。
+// 所有函数通过接口（ECSAPI/VPCAPI/STSAPI）接收 SDK 客户端，支持 mock 测试。
 package alicloud
 
 import (
@@ -10,17 +12,21 @@ import (
 )
 
 const (
-	DefaultRegion   = "ap-southeast-1"
+	DefaultRegion   = "ap-southeast-1" // 默认区域：新加坡
 	EnvAccessKeyID  = "ALICLOUD_ACCESS_KEY_ID"
 	EnvAccessSecret = "ALICLOUD_ACCESS_KEY_SECRET"
 )
 
+// Config 阿里云 SDK 认证配置，从环境变量加载
 type Config struct {
 	AccessKeyID     string
 	AccessKeySecret string
 	RegionID        string
 }
 
+// LoadConfigFromEnv 从环境变量加载阿里云配置。
+// 必须设置 ALICLOUD_ACCESS_KEY_ID 和 ALICLOUD_ACCESS_KEY_SECRET，
+// ALICLOUD_REGION 可选（默认 ap-southeast-1）。
 func LoadConfigFromEnv() (*Config, error) {
 	accessKeyID := os.Getenv(EnvAccessKeyID)
 	accessKeySecret := os.Getenv(EnvAccessSecret)
@@ -44,12 +50,14 @@ func LoadConfigFromEnv() (*Config, error) {
 	}, nil
 }
 
+// Clients 持有所有阿里云 SDK 客户端实例
 type Clients struct {
 	ECS *ecsclient.Client
 	VPC *vpcclient.Client
 	STS *stsclient.Client
 }
 
+// NewClients 使用统一配置初始化 ECS/VPC/STS 三个 SDK 客户端
 func NewClients(cfg *Config) (*Clients, error) {
 	openAPIConfig := &client.Config{
 		AccessKeyId:     &cfg.AccessKeyID,
@@ -79,6 +87,7 @@ func NewClients(cfg *Config) (*Clients, error) {
 	}, nil
 }
 
+// ClientInterface 统一的客户端访问接口，用于依赖注入
 type ClientInterface interface {
 	STSClient() STSAPI
 	ECSClient() ECSAPI
@@ -89,6 +98,7 @@ type clientWrapper struct {
 	clients *Clients
 }
 
+// NewClientWrapper 将 Clients 包装为 ClientInterface
 func NewClientWrapper(clients *Clients) ClientInterface {
 	return &clientWrapper{clients: clients}
 }

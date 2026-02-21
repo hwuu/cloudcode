@@ -1,3 +1,6 @@
+// Package main 是 CloudCode CLI 的入口。
+// 提供 4 个子命令：deploy（部署）、status（状态）、destroy（销毁）、version（版本）。
+// 版本信息通过 ldflags 在构建时注入。
 package main
 
 import (

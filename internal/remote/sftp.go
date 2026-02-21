@@ -1,5 +1,7 @@
 package remote
 
+// sftp.go 封装 SFTP 文件上传操作，用于将渲染后的配置文件上传到 ECS 实例。
+
 import (
 	"fmt"
 )
@@ -10,7 +12,7 @@ type SFTPClient interface {
 	Close() error
 }
 
-// UploadFiles 批量上传文件，任一失败立即返回错误
+// UploadFiles 批量上传文件（remotePath → content 映射），任一失败立即返回错误
 func UploadFiles(client SFTPClient, files map[string][]byte) error {
 	for remotePath, content := range files {
 		if err := client.UploadFile(content, remotePath); err != nil {

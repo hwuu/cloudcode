@@ -1,3 +1,11 @@
+// Package template 管理配置文件模板的渲染和静态文件的读取。
+// 使用 go:embed 嵌入 templates/ 目录下的所有文件，编译后无需外部文件依赖。
+//
+// 文件分两类：
+//   - 模板文件（.tmpl）：使用 Go text/template 渲染，注入域名/密码/API Key 等变量
+//   - 静态文件：原样输出（docker-compose.yml、Dockerfile.opencode）
+//
+// RenderAll 将所有文件渲染后映射到 ECS 上的目标路径，供 SFTP 上传。
 package template
 
 import (

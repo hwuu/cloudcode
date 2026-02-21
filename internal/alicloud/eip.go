@@ -1,5 +1,8 @@
 package alicloud
 
+// 本文件管理弹性公网 IP（EIP）的分配、绑定、解绑、释放和状态查询。
+// EIP 绑定到 ECS 实例后，用户通过该 IP 访问部署的服务。
+
 import (
 	"context"
 	"fmt"
@@ -8,12 +11,14 @@ import (
 	vpcclient "github.com/alibabacloud-go/vpc-20160428/v6/client"
 )
 
+// EIPResource EIP 资源信息
 type EIPResource struct {
-	ID     string
-	IP     string
-	Status string
+	ID     string // EIP 分配 ID（AllocationId）
+	IP     string // 弹性公网 IP 地址
+	Status string // 状态：Available（未绑定）/ InUse（已绑定）
 }
 
+// AllocateEIP 分配一个按流量计费的 EIP（带宽 5Mbps）
 func AllocateEIP(vpcCli VPCAPI, regionID, eipName string) (*EIPResource, error) {
 	req := &vpcclient.AllocateEipAddressRequest{
 		RegionId:           &regionID,
@@ -39,6 +44,7 @@ func AllocateEIP(vpcCli VPCAPI, regionID, eipName string) (*EIPResource, error) 
 	}, nil
 }
 
+// ReleaseEIP 释放指定 EIP（必须先解绑）
 func ReleaseEIP(vpcCli VPCAPI, allocationID string) error {
 	req := &vpcclient.ReleaseEipAddressRequest{
 		AllocationId: &allocationID,
@@ -47,6 +53,7 @@ func ReleaseEIP(vpcCli VPCAPI, allocationID string) error {
 	return err
 }
 
+// AssociateEIPToInstance 将 EIP 绑定到 ECS 实例
 func AssociateEIPToInstance(vpcCli VPCAPI, allocationID, instanceID, regionID string) error {
 	req := &vpcclient.AssociateEipAddressRequest{
 		AllocationId: &allocationID,
@@ -57,6 +64,7 @@ func AssociateEIPToInstance(vpcCli VPCAPI, allocationID, instanceID, regionID st
 	return err
 }
 
+// UnassociateEIPFromInstance 将 EIP 从 ECS 实例解绑
 func UnassociateEIPFromInstance(vpcCli VPCAPI, allocationID, instanceID, regionID string) error {
 	req := &vpcclient.UnassociateEipAddressRequest{
 		AllocationId: &allocationID,
@@ -67,6 +75,7 @@ func UnassociateEIPFromInstance(vpcCli VPCAPI, allocationID, instanceID, regionI
 	return err
 }
 
+// DescribeEIP 查询 EIP 详情
 func DescribeEIP(vpcCli VPCAPI, allocationID, regionID string) (*EIPResource, error) {
 	req := &vpcclient.DescribeEipAddressesRequest{
 		AllocationId: &allocationID,
@@ -101,6 +110,8 @@ const (
 	DefaultEIPWaitTimeout  = 2 * time.Minute
 )
 
+// WaitForEIPBound 轮询等待 EIP 状态变为 InUse（已绑定到实例）。
+// 使用 context + ticker 模式，避免紧密循环。
 func WaitForEIPBound(ctx context.Context, vpcCli VPCAPI, allocationID, regionID string, interval, timeout time.Duration) error {
 	if interval == 0 {
 		interval = DefaultEIPWaitInterval

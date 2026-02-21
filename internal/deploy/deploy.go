@@ -1,3 +1,13 @@
+// Package deploy 编排 CloudCode 的完整部署/销毁/状态查询流程。
+// Deployer 通过依赖注入接收所有外部依赖（阿里云 SDK、SSH、SFTP），完全可 mock 测试。
+//
+// 部署流程分 6 个阶段：
+//  1. PreflightCheck — 验证阿里云凭证
+//  2. PromptConfig — 交互收集域名/用户名/密码/API Key 等配置
+//  3. CreateResources — 幂等创建 VPC→VSwitch→安全组→SSH密钥对→ECS→EIP
+//  4. DeployApp — SSH 连接 ECS，安装 Docker，上传配置，启动容器
+//  5. HealthCheck — 检查容器运行状态
+//  6. 输出访问信息
 package deploy
 
 import (
@@ -16,16 +26,16 @@ import (
 	tmpl "github.com/hwuu/cloudcode/internal/template"
 )
 
-// DeployConfig 保存交互收集的部署配置
+// DeployConfig 保存交互收集的部署配置（阶段 2 的输出，阶段 4 的输入）
 type DeployConfig struct {
-	Domain          string
-	Username        string
-	Password        string
-	Email           string
-	OpenAIAPIKey    string
-	OpenAIBaseURL   string
-	AnthropicAPIKey string
-	SSHIP           string // SSH IP 限制，空表示不限制
+	Domain          string // 域名（留空则使用 EIP.nip.io）
+	Username        string // Authelia 管理员用户名
+	Password        string // 管理员密码（明文，部署时哈希）
+	Email           string // 管理员邮箱
+	OpenAIAPIKey    string // OpenAI API Key
+	OpenAIBaseURL   string // OpenAI Base URL（可选，兼容第三方）
+	AnthropicAPIKey string // Anthropic API Key（可选）
+	SSHIP           string // SSH 安全组源 IP 限制（CIDR 格式，空表示不限制）
 }
 
 // SSHDialFactory 创建 SSH DialFunc 的工厂函数

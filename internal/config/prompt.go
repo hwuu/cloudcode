@@ -1,3 +1,5 @@
+// prompt.go 提供 CLI 交互式输入功能：文本输入、密码输入（掩码显示）、确认、选择。
+// 同时包含密码哈希（Argon2id）和随机密钥生成工具。
 package config
 
 import (
@@ -13,21 +15,24 @@ import (
 	"golang.org/x/term"
 )
 
+// Argon2id 哈希参数，与 Authelia 配置保持一致
 const (
 	Argon2idIterations  = 1
 	Argon2idSaltLength  = 16
 	Argon2idParallelism = 8
-	Argon2idMemory      = 64
+	Argon2idMemory      = 64 // 单位 MiB，实际传给 argon2 时乘以 1024 转为 KiB
 	Argon2idKeyLength   = 32
 
-	SecretLength = 32
+	SecretLength = 32 // 随机密钥长度（字节）
 )
 
+// Prompter 封装 CLI 交互式输入，通过 reader/writer 抽象支持 mock 测试
 type Prompter struct {
 	reader io.Reader
 	writer io.Writer
 }
 
+// NewPrompter 创建 Prompter（指定输入输出流）
 func NewPrompter(reader io.Reader, writer io.Writer) *Prompter {
 	return &Prompter{
 		reader: reader,
@@ -35,6 +40,7 @@ func NewPrompter(reader io.Reader, writer io.Writer) *Prompter {
 	}
 }
 
+// NewDefaultPrompter 创建使用 stdin/stdout 的默认 Prompter
 func NewDefaultPrompter() *Prompter {
 	return &Prompter{
 		reader: os.Stdin,
@@ -42,6 +48,7 @@ func NewDefaultPrompter() *Prompter {
 	}
 }
 
+// Prompt 显示提示信息并读取一行输入
 func (p *Prompter) Prompt(message string) (string, error) {
 	fmt.Fprint(p.writer, message)
 	scanner := bufio.NewScanner(p.reader)
@@ -51,6 +58,7 @@ func (p *Prompter) Prompt(message string) (string, error) {
 	return strings.TrimSpace(scanner.Text()), nil
 }
 
+// PromptWithDefault 带默认值的输入提示，用户直接回车则使用默认值
 func (p *Prompter) PromptWithDefault(message, defaultValue string) (string, error) {
 	result, err := p.Prompt(fmt.Sprintf("%s [%s]: ", message, defaultValue))
 	if err != nil {
@@ -62,6 +70,8 @@ func (p *Prompter) PromptWithDefault(message, defaultValue string) (string, erro
 	return result, nil
 }
 
+// PromptPassword 密码输入，终端模式下每个字符显示为 *，支持退格删除。
+// 非终端模式（如测试 mock）退化为普通文本读取。
 func (p *Prompter) PromptPassword(message string) (string, error) {
 	fmt.Fprint(p.writer, message)
 
@@ -82,6 +92,7 @@ func (p *Prompter) PromptPassword(message string) (string, error) {
 	return strings.TrimSpace(scanner.Text()), nil
 }
 
+// PromptConfirm 确认提示，返回用户是否输入了 y
 func (p *Prompter) PromptConfirm(message string) (bool, error) {
 	result, err := p.Prompt(fmt.Sprintf("%s [y/N]: ", message))
 	if err != nil {
@@ -90,6 +101,7 @@ func (p *Prompter) PromptConfirm(message string) (bool, error) {
 	return strings.ToLower(result) == "y", nil
 }
 
+// PromptSelect 显示选项列表，返回用户选择的索引（0-based）
 func (p *Prompter) PromptSelect(message string, options []string) (int, error) {
 	fmt.Fprintln(p.writer, message)
 	for i, opt := range options {
@@ -117,6 +129,8 @@ func (p *Prompter) PromptSelect(message string, options []string) (int, error) {
 	return choice - 1, nil
 }
 
+// HashPassword 使用 Argon2id 算法哈希密码，返回 Authelia 兼容的格式：
+// $argon2id$v=19$m=65536,t=1,p=8$<salt>$<hash>
 func HashPassword(password string) (string, error) {
 	salt := make([]byte, Argon2idSaltLength)
 	if _, err := rand.Read(salt); err != nil {
@@ -139,6 +153,7 @@ func HashPassword(password string) (string, error) {
 		Argon2idMemory*1024, Argon2idIterations, Argon2idParallelism, b64Salt, b64Hash), nil
 }
 
+// GenerateSecret 生成 32 字节随机密钥，base64 编码输出（用于 Authelia session/storage 密钥）
 func GenerateSecret() (string, error) {
 	bytes := make([]byte, SecretLength)
 	if _, err := rand.Read(bytes); err != nil {
@@ -147,6 +162,8 @@ func GenerateSecret() (string, error) {
 	return base64.StdEncoding.EncodeToString(bytes), nil
 }
 
+// readPassword 从终端读取密码，每输入一个字符显示 *，支持退格删除。
+// 通过 term.MakeRaw 进入原始模式逐字符读取，退出时恢复终端状态。
 func readPassword(fd int) ([]byte, error) {
 	oldState, err := term.MakeRaw(fd)
 	if err != nil {

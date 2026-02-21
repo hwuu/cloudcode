@@ -1,5 +1,10 @@
 package deploy
 
+// destroy.go 按序销毁所有云资源，支持 --force（跳过确认）和 --dry-run（仅预览）。
+// 删除顺序：解绑EIP → 释放EIP → 删除ECS → 删除SSH密钥对 → 删除安全组 → 删除VSwitch → 删除VPC。
+// 每步删除成功后立即更新 state，支持中断后重新执行（跳过已删除的资源）。
+// 单个资源删除失败不阻塞后续删除，最后汇总输出失败资源。
+
 import (
 	"context"
 	"fmt"

@@ -1,5 +1,8 @@
 package remote
 
+// ssh_impl.go 提供 SSH/SFTP 的真实实现（非 mock），用于连接 ECS 实例。
+// 包括：SSH 命令执行、SFTP 文件上传、公网 IP 获取。
+
 import (
 	"bytes"
 	"context"
@@ -48,6 +51,8 @@ func NewSSHDialFunc(host string, port int, user string, privateKey []byte) DialF
 	}
 }
 
+// RunCommand 在远程执行命令，支持 context 超时取消。
+// 返回 stdout 内容；失败时错误信息包含 stderr。
 func (c *realSSHClient) RunCommand(ctx context.Context, cmd string) (string, error) {
 	session, err := c.client.NewSession()
 	if err != nil {
@@ -120,6 +125,7 @@ func NewSFTPClient(host string, port int, user string, privateKey []byte) (SFTPC
 	}, nil
 }
 
+// UploadFile 上传文件内容到远程路径（自动创建父目录）
 func (c *realSFTPClient) UploadFile(localContent []byte, remotePath string) error {
 	// 自动创建远程目录
 	dir := filepath.Dir(remotePath)
@@ -145,7 +151,8 @@ func (c *realSFTPClient) Close() error {
 	return c.sshClient.Close()
 }
 
-// GetPublicIP 通过外部服务获取用户公网 IP
+// GetPublicIP 通过外部服务（ipify）获取用户公网 IP，用于限制 SSH 安全组规则。
+// 支持通过 CLOUDCODE_PUBLIC_IP 环境变量覆盖（测试/代理场景）。
 func GetPublicIP() (string, error) {
 	if ip := os.Getenv("CLOUDCODE_PUBLIC_IP"); ip != "" {
 		return ip, nil

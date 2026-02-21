@@ -204,23 +204,12 @@ func newOTCCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("读取验证码失败: %w", err)
 			}
-			// 解析最新的 OTC
-			lines := strings.Split(strings.TrimSpace(output), "\n")
-			for i := len(lines) - 1; i >= 0; i-- {
-				line := strings.TrimSpace(lines[i])
-				if strings.Contains(line, "Your One-Time Code is") || strings.Contains(line, "one-time code") {
-					fmt.Println(line)
-					return nil
-				}
+			output = strings.TrimSpace(output)
+			if output == "" {
+				fmt.Println("暂无验证码记录。请先在浏览器中触发 Authelia 验证操作。")
+				return nil
 			}
-			// 没找到特定行，输出最后 10 行
-			start := 0
-			if len(lines) > 10 {
-				start = len(lines) - 10
-			}
-			for _, line := range lines[start:] {
-				fmt.Println(line)
-			}
+			fmt.Println(output)
 			return nil
 		},
 	}

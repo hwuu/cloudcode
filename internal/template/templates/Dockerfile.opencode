@@ -46,11 +46,12 @@ RUN mkdir -p /home/opencode/.ssh \
     && touch /home/opencode/.ssh/known_hosts \
     && ssh-keyscan -T 5 github.com 2>/dev/null >> /home/opencode/.ssh/known_hosts || true
 
-RUN mkdir -p /home/opencode/workspace /home/opencode/.config/opencode \
-    && chown -R opencode:opencode /home/opencode/workspace /home/opencode/.config/opencode
+RUN mkdir -p /home/opencode/workspace /home/opencode/.config/opencode /home/opencode/.local/share/opencode \
+    && chown -R opencode:opencode /home/opencode/workspace /home/opencode/.config/opencode /home/opencode/.local/share/opencode
 
 VOLUME ["/home/opencode/workspace"]
 VOLUME ["/home/opencode/.config/opencode"]
+VOLUME ["/home/opencode/.local/share/opencode"]
 
 EXPOSE 4096
 

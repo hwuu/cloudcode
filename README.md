@@ -74,6 +74,18 @@ cloudcode deploy --force
 cloudcode status
 ```
 
+### 运维命令
+
+```bash
+cloudcode otc                          # 读取 Authelia 一次性验证码（首次注册 Passkey 用）
+cloudcode logs                         # 查看所有容器日志（默认最后 50 行）
+cloudcode logs authelia                # 查看指定容器日志
+cloudcode logs -f                      # 实时跟踪日志
+cloudcode logs -n 100 opencode         # 查看最后 100 行
+cloudcode ssh                          # SSH 登录到 ECS 实例
+cloudcode exec opencode opencode -v    # 在容器内执行命令
+```
+
 ### 销毁资源
 
 ```bash

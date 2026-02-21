@@ -1,12 +1,17 @@
 // Package main 是 CloudCode CLI 的入口。
-// 提供 4 个子命令：deploy（部署）、status（状态）、destroy（销毁）、version（版本）。
+// 提供子命令：deploy（部署）、status（状态）、destroy（销毁）、
+// otc（读取验证码）、logs（容器日志）、ssh（登录 ECS）、exec（容器内执行命令）、version（版本）。
 // 版本信息通过 ldflags 在构建时注入。
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"runtime"
+	"strings"
+	"syscall"
 
 	"github.com/hwuu/cloudcode/internal/alicloud"
 	"github.com/hwuu/cloudcode/internal/config"
@@ -32,6 +37,10 @@ func newRootCmd() *cobra.Command {
 	rootCmd.AddCommand(newDeployCmd())
 	rootCmd.AddCommand(newStatusCmd())
 	rootCmd.AddCommand(newDestroyCmd())
+	rootCmd.AddCommand(newOTCCmd())
+	rootCmd.AddCommand(newLogsCmd())
+	rootCmd.AddCommand(newSSHCmd())
+	rootCmd.AddCommand(newExecCmd())
 	rootCmd.AddCommand(newVersionCmd())
 
 	return rootCmd
@@ -144,6 +153,185 @@ func newVersionCmd() *cobra.Command {
 			fmt.Printf("  go:     %s\n", runtime.Version())
 		},
 	}
+}
+
+// sshRunCommand 从 state 读取连接信息，SSH 到 ECS 执行命令并返回输出
+func sshRunCommand(ctx context.Context, cmd string) (string, error) {
+	state, privateKey, err := loadStateAndKey("")
+	if err != nil {
+		return "", err
+	}
+	dialFunc := remote.NewSSHDialFunc(state.Resources.EIP.IP, 22, "root", privateKey)
+	client, err := remote.WaitForSSH(ctx, dialFunc, remote.WaitSSHOptions{Timeout: 10 * remote.DefaultInitialInterval})
+	if err != nil {
+		return "", fmt.Errorf("SSH 连接失败: %w", err)
+	}
+	defer client.Close()
+	return client.RunCommand(ctx, cmd)
+}
+
+// loadStateAndKey 加载 state 和 SSH 私钥
+func loadStateAndKey(stateDir string) (*config.State, []byte, error) {
+	state, err := config.LoadState()
+	if err != nil {
+		return nil, nil, fmt.Errorf("未找到部署记录，请先运行 cloudcode deploy")
+	}
+	if state.Resources.EIP.IP == "" {
+		return nil, nil, fmt.Errorf("EIP 未分配，请先完成部署")
+	}
+	dir := stateDir
+	if dir == "" {
+		dir, err = config.GetStateDir()
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+	keyPath := dir + "/ssh_key"
+	privateKey, err := os.ReadFile(keyPath)
+	if err != nil {
+		return nil, nil, fmt.Errorf("读取 SSH 私钥失败: %w", err)
+	}
+	return state, privateKey, nil
+}
+
+// newOTCCmd 读取 Authelia One-Time Code（首次注册 Passkey 时使用）
+func newOTCCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "otc",
+		Short: "读取 Authelia 一次性验证码（用于首次注册 Passkey）",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			output, err := sshRunCommand(cmd.Context(), "docker exec authelia cat /config/notification.txt 2>/dev/null")
+			if err != nil {
+				return fmt.Errorf("读取验证码失败: %w", err)
+			}
+			// 解析最新的 OTC
+			lines := strings.Split(strings.TrimSpace(output), "\n")
+			for i := len(lines) - 1; i >= 0; i-- {
+				line := strings.TrimSpace(lines[i])
+				if strings.Contains(line, "Your One-Time Code is") || strings.Contains(line, "one-time code") {
+					fmt.Println(line)
+					return nil
+				}
+			}
+			// 没找到特定行，输出最后 10 行
+			start := 0
+			if len(lines) > 10 {
+				start = len(lines) - 10
+			}
+			for _, line := range lines[start:] {
+				fmt.Println(line)
+			}
+			return nil
+		},
+	}
+}
+
+// newLogsCmd 查看容器日志
+func newLogsCmd() *cobra.Command {
+	var tail int
+	var follow bool
+
+	cmd := &cobra.Command{
+		Use:   "logs [container]",
+		Short: "查看容器日志",
+		Long:  "查看 Docker Compose 容器日志。可选指定容器名（authelia/caddy/opencode）。",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			composeCmd := "cd ~/cloudcode && docker compose logs"
+			if tail > 0 {
+				composeCmd += fmt.Sprintf(" --tail=%d", tail)
+			}
+			if follow {
+				// follow 模式需要交互式 SSH，用 exec 替代
+				state, _, err := loadStateAndKey("")
+				if err != nil {
+					return err
+				}
+				dir, _ := config.GetStateDir()
+				keyPath := dir + "/ssh_key"
+				sshArgs := []string{
+					"-i", keyPath,
+					"-o", "StrictHostKeyChecking=no",
+					"-o", "UserKnownHostsFile=/dev/null",
+					"-o", "LogLevel=ERROR",
+					"root@" + state.Resources.EIP.IP,
+					composeCmd + " -f",
+				}
+				if len(args) > 0 {
+					sshArgs[len(sshArgs)-1] += " " + args[0]
+				}
+				return syscall.Exec(sshBinary(), append([]string{"ssh"}, sshArgs...), os.Environ())
+			}
+			if len(args) > 0 {
+				composeCmd += " " + args[0]
+			}
+			output, err := sshRunCommand(cmd.Context(), composeCmd)
+			if err != nil {
+				return fmt.Errorf("获取日志失败: %w", err)
+			}
+			fmt.Print(output)
+			return nil
+		},
+	}
+
+	cmd.Flags().IntVarP(&tail, "tail", "n", 50, "显示最后 N 行日志")
+	cmd.Flags().BoolVarP(&follow, "follow", "f", false, "实时跟踪日志输出")
+
+	return cmd
+}
+
+// newSSHCmd 快捷 SSH 登录 ECS
+func newSSHCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "ssh",
+		Short: "SSH 登录到 ECS 实例",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			state, _, err := loadStateAndKey("")
+			if err != nil {
+				return err
+			}
+			dir, _ := config.GetStateDir()
+			keyPath := dir + "/ssh_key"
+			sshArgs := []string{
+				"ssh",
+				"-i", keyPath,
+				"-o", "StrictHostKeyChecking=no",
+				"-o", "UserKnownHostsFile=/dev/null",
+				"-o", "LogLevel=ERROR",
+				"root@" + state.Resources.EIP.IP,
+			}
+			return syscall.Exec(sshBinary(), sshArgs, os.Environ())
+		},
+	}
+}
+
+// newExecCmd 在容器内执行命令
+func newExecCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "exec <container> <command> [args...]",
+		Short: "在容器内执行命令",
+		Long:  "在指定容器内执行命令。例如: cloudcode exec opencode opencode --version",
+		Args:  cobra.MinimumNArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			container := args[0]
+			containerCmd := strings.Join(args[1:], " ")
+			remoteCmd := fmt.Sprintf("cd ~/cloudcode && docker compose exec %s %s", container, containerCmd)
+			output, err := sshRunCommand(cmd.Context(), remoteCmd)
+			if err != nil {
+				return fmt.Errorf("执行失败: %w", err)
+			}
+			fmt.Print(output)
+			return nil
+		},
+	}
+}
+
+// sshBinary 查找 ssh 可执行文件路径
+func sshBinary() string {
+	path, err := exec.LookPath("ssh")
+	if err != nil {
+		return "/usr/bin/ssh"
+	}
+	return path
 }
 
 func main() {

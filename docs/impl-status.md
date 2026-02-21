@@ -401,3 +401,19 @@ go test ./tests/e2e/ -tags e2e -v -timeout 30m
 destroy 全部 7 个资源清理成功
 全流程耗时约 644s（~10 分钟）
 ```
+
+---
+
+## 运维命令（2026-02-16）
+
+新增 4 个运维子命令，减少 SSH 依赖，提升日常运维体验：
+
+| 命令 | 用途 |
+|------|------|
+| `cloudcode otc` | 读取 Authelia 一次性验证码（首次注册 Passkey 时使用） |
+| `cloudcode logs [container]` | 查看容器日志，支持 `--tail`/`-f` |
+| `cloudcode ssh` | 快捷 SSH 登录 ECS（自动读取私钥路径） |
+| `cloudcode exec <container> <cmd>` | 在容器内执行命令 |
+
+**实现方式**：共享 `sshRunCommand` 辅助函数，从 state 读取 EIP/私钥 → SSH 连接 → 执行命令。
+`ssh` 和 `logs -f` 使用 `syscall.Exec` 替换进程，支持交互式终端。

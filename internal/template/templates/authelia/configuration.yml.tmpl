@@ -20,7 +20,7 @@ session:
   inactivity: 30m
   cookies:
     - domain: {{ .Domain }}
-      authelia_url: https://{{ .Domain }}/auth
+      authelia_url: https://auth.{{ .Domain }}
       name: authelia_session
       same_site: lax
 
@@ -32,6 +32,9 @@ storage:
 identity_validation:
   reset_password:
     jwt_secret: '{{ .SessionSecret }}'
+  elevated_session:
+    require_second_factor: false
+    skip_second_factor: true
 
 webauthn:
   display_name: CloudCode
@@ -47,9 +50,7 @@ totp:
 access_control:
   default_policy: deny
   rules:
-    - domain: {{ .Domain }}
-      resources:
-        - '^/auth([/?].*)?$'
+    - domain: auth.{{ .Domain }}
       policy: bypass
     - domain: {{ .Domain }}
       policy: two_factor

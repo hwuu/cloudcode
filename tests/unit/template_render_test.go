@@ -125,9 +125,9 @@ func TestRenderAutheliaConfig(t *testing.T) {
 		{"secret: 'test-session-secret'", "session secret"},
 		{"encryption_key: 'test-storage-key'", "storage encryption key"},
 		{"domain: opencode.example.com", "domain in session cookies"},
-		{"authelia_url: https://opencode.example.com/auth", "authelia URL"},
+		{"authelia_url: https://auth.opencode.example.com", "authelia URL"},
 		{"policy: two_factor", "two_factor policy"},
-		{"policy: bypass", "bypass policy for auth paths"},
+		{"domain: auth.opencode.example.com", "auth subdomain"},
 		{"display_name: CloudCode", "webauthn display name"},
 	}
 

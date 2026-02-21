@@ -46,7 +46,7 @@ nip.io 是公共服务，所有用户共享 Let's Encrypt 的速率限制（每�
 **解决方案一：使用自有域名（推荐）**
 
 如果你有域名：
-1. 配置 DNS A 记录指向 EIP
+1. 配置 DNS A 记录指向 EIP（需要配置两条：`example.com` 和 `auth.example.com`）
 2. 重新部署：
    ```bash
    cloudcode deploy --force
@@ -62,20 +62,18 @@ nip.io 是公共服务，所有用户共享 Let's Encrypt 的速率限制（每�
 ssh -i ~/.cloudcode/ssh_key root@<EIP>
 cd ~/cloudcode
 
-# 编辑 Caddyfile，在域名行后添加 "tls internal"
-# 修改前：
-#   <EIP>.nip.io {
-# 修改后：
+# 编辑 Caddyfile，在每个域名块中添加 "tls internal"
+# 示例：
+#   auth.<EIP>.nip.io {
+#       tls internal
+#       ...
+#   }
 #   <EIP>.nip.io {
 #       tls internal
+#       ...
+#   }
 
 # 重启 Caddy
-docker compose restart caddy
-```
-
-或使用 sed 一键修改：
-```bash
-sed -i 's/^.*\.nip\.io {$/&\n    tls internal/' Caddyfile
 docker compose restart caddy
 ```
 
@@ -84,6 +82,40 @@ docker compose restart caddy
 **解决方案三：等待速率限制重置**
 
 根据错误日志中的 `retry after` 时间等待，通常为 7 天。
+
+---
+
+## 认证问题
+
+### Authelia 架构说明
+
+CloudCode 使用子域名架构部署 Authelia：
+- `auth.<domain>` — Authelia 登录页面
+- `<domain>` — OpenCode 服务（受 forward_auth 保护）
+
+访问流程：
+1. 访问 `https://<domain>`
+2. 未登录时重定向到 `https://auth.<domain>`
+3. 登录成功后返回 `https://<domain>`
+
+### Authelia 登录失败
+
+**检查步骤：**
+```bash
+# 查看 Authelia 日志
+docker logs authelia
+
+# 检查用户配置
+cat ~/cloudcode/authelia/users_database.yml
+```
+
+### 忘记密码
+
+**解决方案：**
+重新部署应用层会重新生成密码哈希：
+```bash
+cloudcode deploy --force
+```
 
 ---
 
@@ -152,29 +184,6 @@ cat ~/cloudcode/.env
 
 # 查看详细日志
 docker logs opencode
-```
-
----
-
-## 认证问题
-
-### Authelia 登录失败
-
-**检查步骤：**
-```bash
-# 查看 Authelia 日志
-docker logs authelia
-
-# 检查用户配置
-cat ~/cloudcode/authelia/users_database.yml
-```
-
-### 忘记密码
-
-**解决方案：**
-重新部署应用层会重新生成密码哈希：
-```bash
-cloudcode deploy --force
 ```
 
 ---

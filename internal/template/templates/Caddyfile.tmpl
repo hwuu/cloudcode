@@ -1,18 +1,19 @@
+# Auth 子域名 - 直接代理 Authelia
+auth.{{ .Domain }} {
+    tls internal
+    reverse_proxy authelia:9091
+}
+
+# 主域名 - OpenCode + forward_auth
 {{ .Domain }} {
-    redir /auth /auth/ 301
+    tls internal
 
-    handle_path /auth/* {
-        reverse_proxy authelia:9091
+    forward_auth authelia:9091 {
+        uri /api/authz/forward-auth
+        copy_headers Remote-User Remote-Groups Remote-Name Remote-Email
     }
 
-    handle {
-        forward_auth authelia:9091 {
-            uri /api/authz/forward-auth
-            copy_headers Remote-User Remote-Groups Remote-Name Remote-Email
-        }
-
-        reverse_proxy opencode:4096
-    }
+    reverse_proxy opencode:4096
 
     log {
         output stdout

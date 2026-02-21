@@ -31,18 +31,16 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | \
 USER opencode
 WORKDIR /home/opencode
 
-ENV PATH="/home/opencode/.opencode/bin:${PATH}"
-
+ARG TARGETARCH
 ARG OPENCODE_VERSION=latest
-RUN ARCH=$(uname -m) && \
-    case "$ARCH" in x86_64) ARCH="x64" ;; aarch64|arm64) ARCH="arm64" ;; esac && \
+RUN ARCH=$(case "$TARGETARCH" in amd64) echo "x64" ;; arm64) echo "arm64" ;; *) echo "$TARGETARCH" ;; esac) && \
     if [ "$OPENCODE_VERSION" = "latest" ]; then \
-        curl -fsSL https://opencode.ai/install | bash; \
+        URL="https://github.com/anomalyco/opencode/releases/latest/download/opencode-linux-${ARCH}.tar.gz"; \
     else \
-        curl -fsSL -o /tmp/opencode "https://github.com/anomalyco/opencode/releases/download/v${OPENCODE_VERSION}/opencode-linux-${ARCH}" \
-        && chmod +x /tmp/opencode \
-        && sudo mv /tmp/opencode /usr/local/bin/; \
-    fi
+        URL="https://github.com/anomalyco/opencode/releases/download/v${OPENCODE_VERSION}/opencode-linux-${ARCH}.tar.gz"; \
+    fi && \
+    curl -fsSL "$URL" | tar xz -C /tmp && \
+    sudo mv /tmp/opencode /usr/local/bin/
 
 RUN mkdir -p /home/opencode/.ssh \
     && touch /home/opencode/.ssh/known_hosts \

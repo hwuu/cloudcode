@@ -127,7 +127,7 @@
 - `TestGenerateSecret_Uniqueness` — PASS
 
 **关键设计**：
-- State 结构体与 design-oc.md 5.1.4 完全一致
+- State 结构体与 design.md 5.1.4 完全一致
 - `~/.cloudcode/` 目录自动创建（0700 权限）
 - Prompter 抽象 stdin/stdout，支持 mock 测试
 - Argon2id 参数：iterations=1, salt_length=16, parallelism=8, memory=64 MiB (65536 KiB)
@@ -200,10 +200,10 @@
 **关键设计**：
 - 模板文件放在 `internal/template/templates/`（go:embed 路径相对于源文件目录）
 - TemplateData 结构体包含所有渲染字段（Domain/Username/HashedPassword/Email/SessionSecret/StorageEncryptionKey/OpenAIAPIKey/OpenAIBaseURL/AnthropicAPIKey）
-- RenderAll 返回 ECS 目标路径 → 内容的映射，与 design-oc.md 5.1.6 文件映射表一致
+- RenderAll 返回 ECS 目标路径 → 内容的映射，与 design.md 5.1.6 文件映射表一致
 - 静态文件（docker-compose.yml、Dockerfile.opencode）原样输出，模板文件（.tmpl）渲染后输出
 
-**注意**：design-oc.md 5.1.1 中模板目录在项目根目录 `templates/`，实际放在 `internal/template/templates/`，因为 go:embed 路径必须相对于源文件目录
+**注意**：design.md 5.1.1 中模板目录在项目根目录 `templates/`，实际放在 `internal/template/templates/`，因为 go:embed 路径必须相对于源文件目录
 
 **Review 修复（2026-02-15）**：
 - env.tmpl 可选字段（OpenAIBaseURL/AnthropicAPIKey）为空时不输出对应行

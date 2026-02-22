@@ -1,6 +1,6 @@
 # CloudCode Go CLI 实现计划
 
-基于 design-oc.md v2.7 设计文档，从零构建 `cloudcode` Go CLI 工具。
+基于 design.md v2.7 设计文档，从零构建 `cloudcode` Go CLI 工具。
 
 ## 步骤总览
 
@@ -76,10 +76,10 @@
 - `tests/unit/config_*_test.go`
 
 **关键设计**：
-- State 结构体与 design-oc.md 5.1.4 完全一致
+- State 结构体与 design.md 5.1.4 完全一致
 - `~/.cloudcode/` 目录自动创建（0700 权限）
 - Prompter 抽象 stdin/stdout，支持 mock 测试
-- Argon2id 参数（与 design-oc.md 5.5 一致）：iterations=1, salt_length=16, parallelism=8, memory=64KB
+- Argon2id 参数（与 design.md 5.5 一致）：iterations=1, salt_length=16, parallelism=8, memory=64KB
 - Secret 生成：crypto/rand 生成 32 字节随机数据，base64 编码输出
 
 **TDD 测试**：
@@ -105,7 +105,7 @@
 - SSHExecutor / SFTPUploader 接口抽象，支持 mock
 - WaitForSSH 前提：ECS 已 Running（步骤 2 的等待逻辑已完成），仅等待 SSH 服务就绪
 - Docker 安装命令超时 10 分钟，普通命令 5 分钟
-- 文件上传按 design-oc.md 5.1.6 映射表
+- 文件上传按 design.md 5.1.6 映射表
 
 **TDD 测试**：
 - mock SSH 连接和命令执行
@@ -208,9 +208,9 @@ type TemplateData struct {
 ## 步骤 9：goreleaser + GitHub Actions
 
 **新增文件**：
-- `.goreleaser.yml` — 按 design-oc.md 5.1.9
+- `.goreleaser.yml` — 按 design.md 5.1.9
 - `.github/workflows/release.yml` — tag 触发发布
-- `install.sh` — 按 design-oc.md 5.1.8
+- `install.sh` — 按 design.md 5.1.8
 
 **验证**：`goreleaser check` + `goreleaser build --snapshot --clean`
 
@@ -222,7 +222,7 @@ type TemplateData struct {
 - `tests/e2e/deploy_test.go` — deploy → status → destroy 全流程（需真实阿里云账号）
 - `README.md` — 项目说明
 
-**E2E 测试场景**（参考 design-oc.md 8.3）：
+**E2E 测试场景**（参考 design.md 8.3）：
 
 | 场景 | 验证方式 |
 |------|----------|

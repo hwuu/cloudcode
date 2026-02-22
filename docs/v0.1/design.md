@@ -497,7 +497,7 @@ cloudcode/
 ├── Makefile                       # 构建命令
 ├── .goreleaser.yml                # 发布配置
 └── docs/
-    └── design-oc.md
+    └── design.md
 ```
 
 #### 5.1.2 核心依赖

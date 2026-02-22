@@ -11,6 +11,7 @@
   - [2.2 Web Terminal：为什么选 ttyd 内置而非独立容器](#22-web-terminal为什么选-ttyd-内置而非独立容器)
   - [2.3 DNS 方案：为什么优先阿里云 DNS + nip.io 兜底](#23-dns-方案为什么优先阿里云-dns--nipio-兜底)
   - [2.4 数据持久化：为什么选 ECS 磁盘快照而非 OSS 备份](#24-数据持久化为什么选-ecs-磁盘快照而非-oss-备份)
+  - [2.5 跨版本快照兼容策略](#25-跨版本快照兼容策略)
 - [3. 组件设计](#3-组件设计)
   - [3.1 重命名 opencode → devbox](#31-重命名-opencode--devbox)
   - [3.2 浏览器 Web Terminal](#32-浏览器-web-terminal)
@@ -130,6 +131,49 @@ v0.1.x 在实际使用中暴露了以下痛点：
 3. 快照绑定同一地域（跨地域恢复需要复制快照）
 
 **快照生命周期**：只保留最新一份快照。创建新快照成功后，自动删除旧快照（通过 backup.json 中记录的 snapshot_id 定位）。
+
+### 2.5 跨版本快照兼容策略
+
+快照恢复的是整个系统盘（含旧容器、旧镜像、旧 volume 名），但新版本 CLI 上传的配置模板可能期望新架构（如服务名变更、新增路由等）。
+
+注意：快照功能从 v0.2 开始引入，不存在 v0.1 的快照。此策略面向 v0.2.x 及后续版本之间的兼容。
+
+#### 2.5.1 版本兼容策略
+
+| 场景 | 行为 |
+|------|------|
+| 同版本恢复（如 0.2.1 → 0.2.1） | 正常恢复 |
+| 跨小版本恢复（如 0.2.1 → 0.2.3） | 正常恢复（小版本保证配置兼容） |
+| 跨大版本恢复（如 0.2.x → 0.3.x） | 警告用户，提供选项 |
+
+跨大版本时提供两个选项：
+
+```
+检测到快照版本 v0.2.3，当前 CLI 版本 v0.3.0
+快照版本不兼容，请选择:
+  1) 全新部署（丢弃快照数据）
+  2) 迁移恢复（保留数据，但容器内 apt 安装的工具可能丢失）
+选择 [1]:
+```
+
+#### 2.5.2 设计原则
+
+- **小版本**（patch/minor）保证快照兼容：不改 volume 名、服务名等基础架构
+- **大版本**（major feature）允许破坏性变更，但提供迁移脚本
+- 迁移脚本随版本发布，放在 `internal/migrate/` 下
+- `backup.json` 记录 `cloudcode_version`，deploy 时对比版本决定恢复策略
+
+#### 2.5.3 backup.json 版本字段
+
+```json
+{
+  "snapshot_id": "s-t4nxxxxxxxxx",
+  "cloudcode_version": "0.2.0",
+  "created_at": "2026-02-22T10:00:00Z",
+  "region": "ap-southeast-1",
+  "disk_size": 60
+}
+```
 
 ---
 
@@ -526,10 +570,10 @@ waitForDNS(cfg.Domain, eip, 5*time.Minute)
 ```json
 {
   "snapshot_id": "s-t4nxxxxxxxxx",
+  "cloudcode_version": "0.2.0",
   "created_at": "2026-02-22T10:00:00Z",
   "region": "ap-southeast-1",
-  "disk_size": 60,
-  "description": "cloudcode auto backup before destroy"
+  "disk_size": 60
 }
 ```
 
@@ -571,9 +615,9 @@ cloudcode backup --delete # 删除指定快照
 |------|------|
 | `internal/alicloud/interfaces.go` | ECSAPI 新增 DescribeDisks/CreateSnapshot/DescribeSnapshots/DeleteSnapshot |
 | `internal/alicloud/ecs.go` | 新增快照相关函数 |
-| `internal/config/backup.go` | backup.json 读写 |
+| `internal/config/backup.go` | backup.json 读写（含 cloudcode_version 字段） |
 | `internal/deploy/destroy.go` | destroy 前创建快照 |
-| `internal/deploy/deploy.go` | deploy 时检测快照并从快照创建 ECS |
+| `internal/deploy/deploy.go` | deploy 时检测快照版本，决定恢复或迁移策略 |
 | `cmd/cloudcode/main.go` | 新增 backup/restore 命令 |
 | `tests/unit/` | 新增快照相关 mock 和测试 |
 
@@ -586,6 +630,8 @@ cloudcode backup --delete # 删除指定快照
 - 首次 deploy（无快照）正常工作
 - 快照创建失败时阻塞 destroy，用户确认后可继续
 - `cloudcode backup` / `cloudcode restore` 独立命令正常工作
+- 跨大版本快照恢复时提示用户选择（全新部署 / 迁移恢复）
+- v0.1 → v0.2 迁移后 volume 数据完整
 
 ---
 
@@ -648,6 +694,7 @@ v0.2.0 对月费用的影响：
 
 ## 变更记录
 
+- v1.2 (2026-02-22): 简化 2.5 跨版本兼容策略（快照功能从 v0.2 引入，不存在 v0.1 快照，去掉具体迁移脚本，改为面向未来的通用策略）
 - v1.1 (2026-02-22): 根据 OC review 修订 — 补充快照生命周期策略（只保留最新）、deploy 流程增加 DNS 更新步骤、补充 ttyd 安全说明、明确快照失败确认机制、修正流程图对齐、opencode 路由改为 /opencode/*
 - v1.0 (2026-02-22): 初始版本，包含四个功能设计
 

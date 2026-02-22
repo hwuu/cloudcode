@@ -226,5 +226,6 @@ func DefaultSecurityGroupRules(sshIP string) []SecurityGroupRule {
 		{Protocol: "TCP", PortRange: "22/22", SourceCIDR: sshSource, Description: "SSH"},
 		{Protocol: "TCP", PortRange: "80/80", SourceCIDR: "0.0.0.0/0", Description: "HTTP"},
 		{Protocol: "TCP", PortRange: "443/443", SourceCIDR: "0.0.0.0/0", Description: "HTTPS"},
+		{Protocol: "TCP", PortRange: "8443/8443", SourceCIDR: "0.0.0.0/0", Description: "HTTPS (备用端口)"},
 	}
 }

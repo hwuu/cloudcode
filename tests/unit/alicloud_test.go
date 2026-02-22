@@ -174,6 +174,7 @@ func TestDefaultSecurityGroupRules(t *testing.T) {
 				{Protocol: "TCP", PortRange: "22/22", SourceCIDR: "1.2.3.4/32"},
 				{Protocol: "TCP", PortRange: "80/80", SourceCIDR: "0.0.0.0/0"},
 				{Protocol: "TCP", PortRange: "443/443", SourceCIDR: "0.0.0.0/0"},
+				{Protocol: "TCP", PortRange: "8443/8443", SourceCIDR: "0.0.0.0/0"},
 			},
 		},
 		{
@@ -183,6 +184,7 @@ func TestDefaultSecurityGroupRules(t *testing.T) {
 				{Protocol: "TCP", PortRange: "22/22", SourceCIDR: "0.0.0.0/0"},
 				{Protocol: "TCP", PortRange: "80/80", SourceCIDR: "0.0.0.0/0"},
 				{Protocol: "TCP", PortRange: "443/443", SourceCIDR: "0.0.0.0/0"},
+				{Protocol: "TCP", PortRange: "8443/8443", SourceCIDR: "0.0.0.0/0"},
 			},
 		},
 	}

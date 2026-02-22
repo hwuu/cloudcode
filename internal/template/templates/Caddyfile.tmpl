@@ -3,8 +3,26 @@ auth.{{ .Domain }} {
     reverse_proxy authelia:9091
 }
 
+auth.{{ .Domain }}:8443 {
+    reverse_proxy authelia:9091
+}
+
 # 主域名 - OpenCode + forward_auth
 {{ .Domain }} {
+    forward_auth authelia:9091 {
+        uri /api/authz/forward-auth
+        copy_headers Remote-User Remote-Groups Remote-Name Remote-Email
+    }
+
+    reverse_proxy opencode:4096
+
+    log {
+        output stdout
+        format console
+    }
+}
+
+{{ .Domain }}:8443 {
     forward_auth authelia:9091 {
         uri /api/authz/forward-auth
         copy_headers Remote-User Remote-Groups Remote-Name Remote-Email

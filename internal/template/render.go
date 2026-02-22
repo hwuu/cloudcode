@@ -29,6 +29,7 @@ type TemplateData struct {
 	OpenAIAPIKey         string // OpenAI API Key
 	OpenAIBaseURL        string // OpenAI Base URL（可选）
 	AnthropicAPIKey      string // Anthropic API Key（可选）
+	Version              string // Docker 镜像版本号
 }
 
 // 模板文件（需要渲染）
@@ -37,12 +38,11 @@ var templateFiles = []string{
 	"templates/env.tmpl",
 	"templates/authelia/configuration.yml.tmpl",
 	"templates/authelia/users_database.yml.tmpl",
+	"templates/docker-compose.yml.tmpl",
 }
 
 // 静态文件（原样输出）
-var staticFiles = []string{
-	"templates/docker-compose.yml",
-}
+var staticFiles = []string{}
 
 // RenderTemplate 渲染指定模板文件，返回渲染后的内容
 func RenderTemplate(name string, data *TemplateData) ([]byte, error) {
@@ -83,11 +83,10 @@ func RenderAll(data *TemplateData) (map[string][]byte, error) {
 		"templates/env.tmpl":                             "~/cloudcode/.env",
 		"templates/authelia/configuration.yml.tmpl":      "~/cloudcode/authelia/configuration.yml",
 		"templates/authelia/users_database.yml.tmpl":     "~/cloudcode/authelia/users_database.yml",
+		"templates/docker-compose.yml.tmpl":              "~/cloudcode/docker-compose.yml",
 	}
 
-	staticMapping := map[string]string{
-		"templates/docker-compose.yml": "~/cloudcode/docker-compose.yml",
-	}
+	staticMapping := map[string]string{}
 
 	for src, dst := range templateMapping {
 		content, err := RenderTemplate(src, data)

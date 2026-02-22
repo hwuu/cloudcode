@@ -31,7 +31,7 @@ services:
       - cloudcode-net
 
   opencode:
-    image: ghcr.io/hwuu/cloudcode-opencode:latest
+    image: ghcr.io/hwuu/cloudcode-opencode:{{ .Version }}
     container_name: opencode
     restart: unless-stopped
     volumes:

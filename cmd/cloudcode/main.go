@@ -79,6 +79,7 @@ func newDeployCmd() *cobra.Command {
 				},
 				SFTPFactory: remote.NewSFTPClient,
 				GetPublicIP: remote.GetPublicIP,
+				Version:     version,
 			}
 
 			return d.Run(cmd.Context(), force)

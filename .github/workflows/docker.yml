@@ -2,6 +2,13 @@ name: Docker
 
 on:
   workflow_call:
+  push:
+    branches:
+      - 'hwuu/**'
+    paths:
+      - 'internal/template/templates/Dockerfile.opencode'
+      - '.github/workflows/docker.yml'
+      - 'VERSION'
 
 permissions:
   contents: read
@@ -23,9 +30,14 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract version from tag
+      - name: Extract version
         id: version
-        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+        run: |
+          if [ -n "$GITHUB_REF_NAME" ] && [[ "$GITHUB_REF_NAME" == v* ]]; then
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=$(cat VERSION | tr -d '[:space:]')" >> "$GITHUB_OUTPUT"
+          fi
 
       - uses: docker/build-push-action@v6
         with:
@@ -34,7 +46,6 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
-            ghcr.io/hwuu/cloudcode-opencode:latest
             ghcr.io/hwuu/cloudcode-opencode:${{ steps.version.outputs.version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

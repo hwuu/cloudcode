@@ -61,6 +61,7 @@ type Deployer struct {
 	GetPublicIP      GetPublicIPFunc
 	WaitInterval     time.Duration // ECS 等待轮询间隔（测试用，默认 5s）
 	WaitTimeout      time.Duration // ECS 等待超时（测试用，默认 5min）
+	Version          string        // Docker 镜像版本号
 }
 
 func (d *Deployer) printf(format string, args ...interface{}) {
@@ -356,6 +357,7 @@ func (d *Deployer) DeployApp(ctx context.Context, state *config.State, cfg *Depl
 		OpenAIAPIKey:         cfg.OpenAIAPIKey,
 		OpenAIBaseURL:        cfg.OpenAIBaseURL,
 		AnthropicAPIKey:      cfg.AnthropicAPIKey,
+		Version:              d.Version,
 	}
 
 	files, err := tmpl.RenderAll(templateData)

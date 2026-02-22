@@ -18,6 +18,7 @@ func testData() *tmpl.TemplateData {
 		OpenAIAPIKey:         "sk-test-key",
 		OpenAIBaseURL:        "https://api.openai.com/v1",
 		AnthropicAPIKey:      "sk-ant-test",
+		Version:              "0.2.0-dev",
 	}
 }
 
@@ -157,10 +158,11 @@ func TestRenderAutheliaUsersDB(t *testing.T) {
 	}
 }
 
-func TestGetStaticFile_DockerCompose(t *testing.T) {
-	content, err := tmpl.GetStaticFile("templates/docker-compose.yml")
+func TestRenderDockerCompose(t *testing.T) {
+	data := testData()
+	content, err := tmpl.RenderTemplate("templates/docker-compose.yml.tmpl", data)
 	if err != nil {
-		t.Fatalf("GetStaticFile failed: %v", err)
+		t.Fatalf("RenderTemplate failed: %v", err)
 	}
 
 	s := string(content)
@@ -173,8 +175,8 @@ func TestGetStaticFile_DockerCompose(t *testing.T) {
 	if !strings.Contains(s, "opencode:") {
 		t.Error("docker-compose should contain opencode service")
 	}
-	if !strings.Contains(s, "image: ghcr.io/hwuu/cloudcode-opencode:latest") {
-		t.Error("docker-compose opencode service should use pre-built image")
+	if !strings.Contains(s, "ghcr.io/hwuu/cloudcode-opencode:"+data.Version) {
+		t.Error("docker-compose should contain versioned image tag")
 	}
 }
 

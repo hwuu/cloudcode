@@ -50,6 +50,7 @@ v0.1.x 在实际使用中暴露了以下痛点：
 | **按需使用** | suspend/resume 秒级恢复，destroy 可选保留快照 |
 | **浏览器终端** | 内置 ttyd，浏览器直接进入 devbox 容器执行命令 |
 | **容器重命名** | opencode → devbox，反映"开发环境"定位 |
+| **统一配置** | `cloudcode init` 一次配置凭证，取代环境变量 |
 
 ### 1.3 非目标
 
@@ -376,6 +377,10 @@ opencode 作为主进程，退出时容器重启（`restart: unless-stopped`）�
 auth.{{ .Domain }} {
     reverse_proxy authelia:9091
 }
+
+auth.{{ .Domain }}:8443 {
+    reverse_proxy authelia:9091
+}
 ```
 
 **路由策略说明**：
@@ -649,11 +654,12 @@ waitForDNS(cfg.Domain, eip, 5*time.Minute)
 
 | 情况 | 行为 |
 |------|------|
+| `state.json` 中 `status: running` | 报错并提示已有运行中实例 |
 | `state.json` 中 `status: suspended` | 报错并提示用户使用 `cloudcode resume` |
 | `state.json` 中 `status: destroyed` 且 `backup.json` 存在 | 按快照恢复流程创建新 ECS |
 | `state.json` 不存在 | 全新部署 |
 
-suspended 实例已有完整资源（ECS/EIP/VPC 等），不应重新创建。`deploy` 仅用于首次部署或从快照恢复。
+running/suspended 实例已有完整资源（ECS/EIP/VPC 等），不应重新创建。`deploy` 仅用于首次部署或从快照恢复。
 
 #### 3.4.4 destroy 流程（可选保留快照）
 
@@ -688,14 +694,17 @@ suspended 实例已有完整资源（ECS/EIP/VPC 等），不应重新创建。`
 +-----------+----------+
 | Confirm destroy?     |
 | [y/N]                |
-+-----------+----------+
-            |
-            v
-+-----------+----------+
-| Delete all resources |
-| (ECS, EIP, VPC,     |
-|  SG, VSwitch)        |
-+----------------------+
++----+----------+------+
+    yes         no
+     |           |
+     v           v
++----+--------+ +----+--------+
+| Delete all | | Abort       |
+| resources  | | (exit)      |
+| (ECS, EIP, | +-------------+
+|  VPC, SG,  |
+|  VSwitch)  |
++------------+
 ```
 
 交互提示：
@@ -852,12 +861,12 @@ v0.1.x 通过环境变量（`ALICLOUD_ACCESS_KEY_ID`、`ALICLOUD_ACCESS_KEY_SECR
 `~/.cloudcode/credentials`（权限 600）：
 
 ```
-access_key_id = LTAI5t...
-access_key_secret = ...
-region = ap-southeast-1
+access_key_id=LTAI5t...
+access_key_secret=...
+region=ap-southeast-1
 ```
 
-使用 key=value 格式，方便用户手动编辑。
+使用 key=value 格式（`=` 周围无空格），避免解析歧义，方便用户手动编辑。
 
 #### 3.5.3 配置读取优先级
 
@@ -884,11 +893,16 @@ $ cloudcode init
 阿里云 Access Key ID: ********
 阿里云 Access Key Secret: ********
 默认区域 [ap-southeast-1]:
+验证凭证... ✗ InvalidAccessKeyId
+重试? [Y/n]: y
+阿里云 Access Key ID: ********
+阿里云 Access Key Secret: ********
+默认区域 [ap-southeast-1]:
 验证凭证... ✓
 配置已保存到 ~/.cloudcode/credentials
 ```
 
-init 完成前调用 `GetCallerIdentity`（STS API）验证凭证有效性。
+init 完成前调用 `GetCallerIdentity`（STS API）验证凭证有效性。验证失败时提示用户重试或退出。
 
 #### 3.5.6 修改文件
 
@@ -906,7 +920,8 @@ init 完成前调用 `GetCallerIdentity`（STS API）验证凭证有效性。
 - credentials 文件权限为 600
 - 环境变量优先于 credentials 文件
 - 无环境变量且无 credentials 文件时报错提示 `cloudcode init`
-- 凭证验证失败时给出明确错误
+- 凭证验证失败时提示重试或退出
+- credentials 文件格式错误时（缺少字段、格式不对）给出明确错误提示
 - 重复 `init` 覆盖旧配置（确认提示）
 
 ---
@@ -926,37 +941,34 @@ init 完成前调用 `GetCallerIdentity`（STS API）验证凭证有效性。
 ### 4.2 依赖关系
 
 ```
-+------------------+
-| 3.5 init         |
-+--------+---------+
-         |
-         v
-+------------------+
-| 3.1 rename       |
-| opencode->devbox |
-+--------+---------+
-         |
-    +----+----+--------+
-    |         |        |
-    v         v        v
-+---+---+ +--+---+ +--+------+
-| 3.2   | | 3.3  | | 3.4     |
-| Web   | | DNS  | | suspend |
-| Term  | |      | | resume  |
-+-------+ +------+ +--------+
++------------------+     +------------------+
+| 3.5 init         |     | 3.1 rename       |
++--------+---------+     | opencode->devbox |
+         |               +--------+---------+
+         |                        |
+         |               +--------+--------+
+         |               |        |        |
+         v               v        v        v
+    +----+----+     +----+--+ +--+---+ +--+------+
+    | 3.3 DNS |     | 3.2   | | 3.3  | | 3.4     |
+    | 3.4 sus |     | Web   | | DNS  | | suspend |
+    |  pend   |     | Term  | |      | | resume  |
+    +---------+     +-------+ +------+ +--------+
 ```
 
-3.5（init）是所有命令的前置条件。3.1（重命名）依赖 3.5。3.2/3.3/3.4 互相独立，但都依赖 3.1 完成。
+- 3.1（rename）是纯代码重构，不需要阿里云凭证，不依赖 3.5（init）
+- 3.5（init）是运行时依赖：3.3（DNS）和 3.4（suspend/resume）需要阿里云 API 调用，依赖 init 提供凭证
+- 3.2（Web Terminal）不需要阿里云凭证（纯容器内改动），仅依赖 3.1
 
 ### 4.3 实现步骤
 
 | 步骤 | 任务 | 依赖 |
 |------|------|------|
-| 1 | cloudcode init（3.5） | 无 |
-| 2 | 重命名 opencode → devbox（3.1） | 步骤 1 |
-| 3 | 自有域名 + 自动 DNS（3.3） | 步骤 2 |
-| 4 | suspend/resume + 可选快照（3.4） | 步骤 2 |
-| 5 | 浏览器 Web Terminal（3.2） | 步骤 2 |
+| 1 | 重命名 opencode → devbox（3.1） | 无 |
+| 2 | cloudcode init（3.5） | 无（可与步骤 1 并行） |
+| 3 | 自有域名 + 自动 DNS（3.3） | 步骤 1、2 |
+| 4 | suspend/resume + 可选快照（3.4） | 步骤 1、2 |
+| 5 | 浏览器 Web Terminal（3.2） | 步骤 1 |
 
 ---
 
@@ -976,6 +988,7 @@ v0.2.0 对月费用的影响：
 
 ## 变更记录
 
+- v1.10 (2026-02-24): CC+OC 第二轮 review — 1.2 目标表补充 init；deploy 补充 status:running 检查；Caddyfile 补充 auth 子域名 8443 端口；init 验证失败改为循环重试；destroy 流程图补充取消退出分支；修正依赖关系（rename 不依赖 init）；credentials 格式去掉等号周围空格；补充格式错误测试要点
 - v1.9 (2026-02-24): CC+OC 联合 review — suspend/resume 补充交互确认；destroy 流程图体现两次确认；deploy 检测 suspended 改为报错提示 resume；3.3.1 补充两条 A 记录说明；3.3.5 改用完整域名示例；EnsureDNSRecord 注释明确为单条操作；2.5 新增版本定义（大版本/小版本）；Caddyfile 补充 8443 备用端口；3.3.7 补充 Authelia 配置模板；新增 3.5 cloudcode init 统一配置管理
 - v1.8 (2026-02-23): Authelia 恢复子域名模式（路径模式配置复杂易出错）；A 记录恢复为两条；3.1.2/3.2.6 修改文件表更新（docker-compose.yml.tmpl、docker.yml、render.go）；3.4 编号规范化（消除 3.4.2.1）；backup.json 去重引用；补充 StopCharging 与 EIP 行为说明；补充 destroy 不保留快照时的删除说明
 - v1.7 (2026-02-23): 修正 ENTRYPOINT 位置（应在 Dockerfile 最后）；补充快照前停机的原因说明；补充快照恢复后容器状态处理；补充 Caddy 路由优先级说明

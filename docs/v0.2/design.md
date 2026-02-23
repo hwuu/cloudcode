@@ -17,6 +17,7 @@
   - [3.2 浏览器 Web Terminal](#32-浏览器-web-terminal)
   - [3.3 自有域名 + 自动 DNS 更新](#33-自有域名--自动-dns-更新)
   - [3.4 按需使用 — suspend/resume + 可选快照](#34-按需使用--suspendresume--可选快照)
+  - [3.5 cloudcode init — 统一配置管理](#35-cloudcode-init--统一配置管理)
 - [4. 实现规划](#4-实现规划)
   - [4.1 优先级](#41-优先级)
   - [4.2 依赖关系](#42-依赖关系)
@@ -46,7 +47,7 @@ v0.1.x 在实际使用中暴露了以下痛点：
 | 目标 | 说明 |
 |------|------|
 | **稳定 HTTPS** | 支持自有域名 + 阿里云 DNS 自动关联 EIP，nip.io 作为兜底 |
-| **按需使用** | destroy 前自动创建磁盘快照，deploy 时从快照恢复，一切如初 |
+| **按需使用** | suspend/resume 秒级恢复，destroy 可选保留快照 |
 | **浏览器终端** | 内置 ttyd，浏览器直接进入 devbox 容器执行命令 |
 | **容器重命名** | opencode → devbox，反映"开发环境"定位 |
 
@@ -117,6 +118,8 @@ v0.1.x 在实际使用中暴露了以下痛点：
 
 **决策**：选择方案 B（ECS 停机）作为 suspend/resume 的核心机制，磁盘快照作为 destroy 时的可选安全网。
 
+**前置条件**：StopCharging 仅适用于**按量付费**实例，包年包月实例不支持。CloudCode 默认创建按量付费实例。
+
 **理由**：
 1. 阿里云按量付费 ECS 支持"停机不收费"（`StoppedMode: StopCharging`），停机后释放 CPU/内存，只收磁盘费
 2. resume 只需 `StartInstance`，几秒恢复，用户体验远优于快照重建
@@ -143,7 +146,16 @@ v0.1.x 在实际使用中暴露了以下痛点：
 
 注意：快照功能从 v0.2 开始引入，不存在 v0.1 的快照。此策略面向 v0.2.x 及后续版本之间的兼容。
 
-#### 2.5.1 版本兼容策略
+#### 2.5.1 版本定义
+
+CloudCode 使用语义化版本号 `MAJOR.MINOR.PATCH`（如 `0.2.1`）：
+
+- **大版本**：MINOR 变更（如 0.2.x → 0.3.x），可能包含破坏性架构变更（服务名、volume 名等）
+- **小版本**：PATCH 变更（如 0.2.0 → 0.2.1），仅 bug 修复和小改进，保证配置兼容
+
+注：当前处于 0.x 阶段，MINOR 视为大版本。进入 1.0 后，MAJOR 变更（1.x → 2.x）为大版本。
+
+#### 2.5.2 版本兼容策略
 
 | 场景 | 行为 |
 |------|------|
@@ -161,14 +173,14 @@ v0.1.x 在实际使用中暴露了以下痛点：
 选择 [1]:
 ```
 
-#### 2.5.2 设计原则
+#### 2.5.3 设计原则
 
 - **小版本**（patch/minor）保证快照兼容：不改 volume 名、服务名等基础架构
 - **大版本**（major feature）允许破坏性变更，但提供迁移脚本
 - 迁移脚本随版本发布，放在 `internal/migrate/` 下
 - `backup.json` 记录 `cloudcode_version`，deploy 时对比版本决定恢复策略
 
-#### 2.5.3 backup.json 版本字段
+#### 2.5.4 backup.json 版本字段
 
 ```json
 {
@@ -202,8 +214,10 @@ v0.1.x 在实际使用中暴露了以下痛点：
 | 文件 | 改动 |
 |------|------|
 | `internal/template/templates/Dockerfile.opencode` | 重命名为 `Dockerfile.devbox` |
-| `internal/template/templates/docker-compose.yml` | 服务名、镜像名、volume 名 |
+| `internal/template/templates/docker-compose.yml.tmpl` | 服务名、镜像名、volume 名 |
 | `internal/template/templates/Caddyfile.tmpl` | `reverse_proxy devbox:4096` |
+| `internal/template/render.go` | 文件名引用更新 |
+| `.github/workflows/docker.yml` | 镜像名改为 `cloudcode-devbox` |
 | `.github/workflows/release.yml` | 镜像名改为 `cloudcode-devbox` |
 | `internal/deploy/deploy.go` | 容器名引用 |
 | `internal/deploy/status.go` | 容器名引用 |
@@ -224,38 +238,70 @@ v0.1.x 在实际使用中暴露了以下痛点：
 +---------+---------+
 |       Caddy       |
 |  (reverse proxy)  |
-+----+----------+---+
-     |          |
-     v          v
-/terminal/* /opencode/*
-     |          |
-     v          v
-+----+----+  +--+------+
-|  ttyd   |  | opencode|
-|  :7681  |  |  :4096  |
-+----+----+  +--+------+
-     |          |
-     +----+-----+
-          |
-    +-----+------+
-    |   devbox    |
-    |  container  |
-    +-------------+
++---+-----+-----+---+
+    |     |     |
+    v     v     v
+  auth. /term-  /*
+  dom   inal/*
+    |     |     |
+    v     v     v
++---+-+ +-+--+ +-+-------+
+|Auth | |ttyd| | opencode|
+|elia | |    | |         |
++-----+ +----+ +---------+
+    |      |        |
+    |      +----+---+
+    |           |
+    |    +------+------+
+    |    |   devbox    |
+    |    |  container  |
+    |    +-------------+
+    |
++---+------+
+| authelia |
+|container |
++----------+
 ```
 
-所有请求经 Caddy → Authelia forward_auth 认证后，按路径分发到 devbox 容器内的两个服务。
+沿用 v0.1 的子域名模式（`auth.{{ .Domain }}`）。Authelia 路径模式（`/auth/*`）需要额外配置 `server.path`，静态资源路径容易出错，社区主流方案均为子域名模式。
+
+请求分发：
+- `auth.{{ .Domain }}` → Authelia 容器（登录/注册页面）
+- `{{ .Domain }}/terminal/*` → devbox 容器的 ttyd（需 forward_auth 认证）
+- `{{ .Domain }}/*` → devbox 容器的 opencode（需 forward_auth 认证，不支持 base-path 必须运行在根路径）
 
 #### 3.2.2 Dockerfile.devbox 改动
 
-安装 ttyd 二进制（~3MB）：
+在 `USER opencode` 指令**之前**安装 ttyd 二进制（需要 root 权限），ENTRYPOINT 放在 Dockerfile 最后：
 
 ```dockerfile
+# === 在 USER opencode 之前（需要 root 权限）===
+
+# 安装 ttyd
 ARG TARGETARCH
 RUN TTYD_ARCH=$(case "$TARGETARCH" in amd64) echo "x86_64" ;; arm64) echo "aarch64" ;; esac) && \
     curl -fsSL -o /usr/local/bin/ttyd \
     "https://github.com/tsl0922/ttyd/releases/latest/download/ttyd.${TTYD_ARCH}" && \
     chmod +x /usr/local/bin/ttyd
+
+# 复制 entrypoint 脚本
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+# === 原有指令（创建用户、安装 opencode 等）===
+
+RUN useradd -m -s /bin/bash opencode ...
+USER opencode
+WORKDIR /home/opencode
+# ... 其他原有内容 ...
+
+# === Dockerfile 最后 ===
+
+# 覆盖默认 ENTRYPOINT（必须在最后）
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 ```
+
+**说明**：ttyd 安装和 entrypoint.sh 复制必须在 `USER opencode` 之前完成，因为需要 root 权限写入 `/usr/local/bin/`。ENTRYPOINT 指令放在 Dockerfile 最后是 Docker 最佳实践。
 
 #### 3.2.3 启动脚本
 
@@ -266,6 +312,7 @@ docker-compose 配置 `init: true` 注入 tini 作为 PID 1，处理信号转发
 # entrypoint.sh
 
 # ttyd 后台运行，崩溃自动重启
+# 注：脚本以 opencode 用户执行（Dockerfile 中 USER opencode）
 while true; do
     ttyd --port 7681 --base-path /terminal /bin/bash
     sleep 1
@@ -275,12 +322,18 @@ done &
 exec opencode web --hostname 0.0.0.0 --port 4096
 ```
 
+**用户上下文说明**：
+- Dockerfile 中设置了 `USER opencode`，entrypoint 脚本及其子进程均以 `opencode` 用户身份运行
+- ttyd 启动的 bash 自然继承了 `opencode` 用户身份，用户在 Web Terminal 中的环境与 SSH 登录一致
+- 端口 7681 和 4096 均 > 1024，opencode 用户有权限绑定
+
 opencode 作为主进程，退出时容器重启（`restart: unless-stopped`），ttyd 随之重启。ttyd 单独崩溃时由 while 循环自动重启，不影响 opencode。
 
 #### 3.2.4 Caddyfile.tmpl 路由
 
 ```caddyfile
 {{ .Domain }} {
+    # Web Terminal（需认证）
     handle_path /terminal/* {
         forward_auth authelia:9091 {
             uri /api/authz/forward-auth
@@ -289,7 +342,9 @@ opencode 作为主进程，退出时容器重启（`restart: unless-stopped`）�
         reverse_proxy devbox:7681
     }
 
-    handle_path /opencode/* {
+    # OpenCode Web UI（需认证）
+    # 注：opencode web 不支持 base-path，必须运行在根路径
+    handle {
         forward_auth authelia:9091 {
             uri /api/authz/forward-auth
             copy_headers Remote-User Remote-Groups Remote-Name Remote-Email
@@ -297,9 +352,41 @@ opencode 作为主进程，退出时容器重启（`restart: unless-stopped`）�
         reverse_proxy devbox:4096
     }
 }
+
+{{ .Domain }}:8443 {
+    # 8443 备用端口（部分网络环境 443 被封锁时使用）
+    # 路由规则与主站点相同
+    handle_path /terminal/* {
+        forward_auth authelia:9091 {
+            uri /api/authz/forward-auth
+            copy_headers Remote-User Remote-Groups Remote-Name Remote-Email
+        }
+        reverse_proxy devbox:7681
+    }
+
+    handle {
+        forward_auth authelia:9091 {
+            uri /api/authz/forward-auth
+            copy_headers Remote-User Remote-Groups Remote-Name Remote-Email
+        }
+        reverse_proxy devbox:4096
+    }
+}
+
+auth.{{ .Domain }} {
+    reverse_proxy authelia:9091
+}
 ```
 
-`handle_path` 自动剥离路径前缀后转发。ttyd 的 `--base-path /terminal` 确保 WebSocket 路径匹配。
+**路由策略说明**：
+
+- `auth.{{ .Domain }}` → Authelia 登录/注册页面（独立子域名，沿用 v0.1 方案）
+- `{{ .Domain }}/terminal/*` → ttyd Web Terminal（需 forward_auth 认证，ttyd 支持 `--base-path`）
+- `{{ .Domain }}/*`（根路径）→ opencode Web UI（需 forward_auth 认证，不支持 base-path）
+
+**Caddy 路由优先级**：`handle_path` 指定具体路径会优先匹配，`handle`（无参数）作为兜底匹配所有未匹配的请求。
+
+用户访问 `https://<domain>/` 直接进入 opencode Web UI，访问 `https://<domain>/terminal/` 进入 Web Terminal。
 
 #### 3.2.5 docker-compose.yml
 
@@ -321,9 +408,10 @@ opencode 作为主进程，退出时容器重启（`restart: unless-stopped`）�
 
 | 文件 | 改动 |
 |------|------|
-| `internal/template/templates/Dockerfile.devbox` | 安装 ttyd，新增 entrypoint.sh |
-| `internal/template/templates/docker-compose.yml` | devbox 暴露 7681 端口 |
-| `internal/template/templates/Caddyfile.tmpl` | 新增 /terminal 路由，改用 handle 分流 |
+| `internal/template/templates/Dockerfile.devbox` | 在 USER opencode 之前：安装 ttyd、COPY entrypoint.sh、添加 ENTRYPOINT 指令 |
+| `internal/template/templates/entrypoint.sh` | 新增文件：ttyd + opencode 双进程管理脚本 |
+| `internal/template/templates/docker-compose.yml.tmpl` | devbox 暴露 7681 端口，添加 init: true |
+| `internal/template/templates/Caddyfile.tmpl` | 新增 /terminal 路由，Authelia 保持子域名模式 |
 
 #### 3.2.7 测试要点
 
@@ -342,8 +430,12 @@ opencode 作为主进程，退出时容器重启（`restart: unless-stopped`）�
 | 场景 | 域名输入 | DNS 托管 | 行为 |
 |------|---------|---------|------|
 | 无域名 | 留空 | — | 使用 `<EIP>.nip.io`，Let's Encrypt 可能失败 |
-| 阿里云域名 | `oc.example.com` | 阿里云 DNS | SDK 自动创建/更新 A 记录 |
-| 外部域名 | `oc.example.com` | Cloudflare 等 | 提示用户手动配置，轮询等待生效 |
+| 阿里云域名 | `oc.example.com` | 阿里云 DNS | SDK 自动创建/更新两条 A 记录（`oc` + `auth.oc`） |
+| 外部域名 | `oc.example.com` | Cloudflare 等 | 提示用户手动配置两条 A 记录，轮询等待生效 |
+
+示例：用户输入 `oc.example.com`，系统拆分为 baseDomain=`example.com`，主机记录=`oc`，最终创建两条 A 记录：
+- `oc.example.com → EIP`
+- `auth.oc.example.com → EIP`
 
 #### 3.3.2 deploy 流程
 
@@ -417,17 +509,20 @@ func FindBaseDomain(fullDomain string, domains []string) (baseDomain, rr string,
 
 #### 3.3.5 A 记录管理
 
-需要创建/更新两条 A 记录：
+需要创建/更新两条 A 记录（沿用 v0.1 的 Authelia 子域名模式）：
 
-| 主机记录 | 记录值 | 用途 |
-|---------|--------|------|
-| `oc` | EIP | 主域名 |
-| `auth.oc` | EIP | Authelia 认证子域名 |
+| A 记录 | 记录值 | 用途 |
+|--------|--------|------|
+| `oc.example.com` | EIP | 主域名（opencode + ttyd） |
+| `auth.oc.example.com` | EIP | Authelia 认证子域名 |
+
+其中 `oc` 和 `auth.oc` 为主机记录，`example.com` 为 baseDomain，由 `FindBaseDomain` 拆分得到。
 
 ```go
-// EnsureDNSRecord creates or updates an A record.
+// EnsureDNSRecord creates or updates a single A record.
 // If record exists with different IP, update it.
 // If record doesn't exist, create it.
+// 调用方需分别为主域名和 auth 子域名各调用一次。
 func EnsureDNSRecord(cli DnsAPI, baseDomain, rr, ip string) error
 ```
 
@@ -453,6 +548,7 @@ waitForDNS(cfg.Domain, eip, 5*time.Minute)
 | `internal/alicloud/interfaces.go` | 新增 DnsAPI 接口定义 |
 | `internal/deploy/deploy.go` | deploy 流程集成 DNS 更新 |
 | `internal/deploy/dns.go` | waitForDNS 轮询逻辑 |
+| `internal/template/templates/authelia/configuration.yml.tmpl` | session domain 配置适配新域名 |
 | `cmd/cloudcode/main.go` | 初始化 DNS client |
 | `tests/unit/alicloud_test.go` | DNS mock 和测试 |
 
@@ -478,6 +574,12 @@ waitForDNS(cfg.Domain, eip, 5*time.Minute)
             |
             v
 +-----------+----------+
+| Confirm suspend?     |
+| [y/N]                |
++-----------+----------+
+            |
+            v
++-----------+----------+
 | StopInstance         |
 | (StopCharging mode)  |
 +-----------+----------+
@@ -494,7 +596,9 @@ waitForDNS(cfg.Domain, eip, 5*time.Minute)
 +----------------------+
 ```
 
-实现极简：一个 `StopInstance` API 调用，设置 `StoppedMode: StopCharging`。停机后 CPU/内存释放不收费，仅收磁盘费 ~$1.2/月。EIP 绑定停机实例不收闲置费。
+实现极简：一个 `StopInstance` API 调用，设置 `StoppedMode: StopCharging`。停机后 CPU/内存释放不收费，仅收磁盘费 ~$1.2/月。
+
+**关于 EIP**：StopCharging 模式会释放实例的公网 IP，但 CloudCode 使用的是独立 EIP（弹性公网 IP），EIP 是独立资源，不受 StopCharging 影响，停机期间保持绑定且不收闲置费。
 
 #### 3.4.2 resume 流程
 
@@ -505,12 +609,23 @@ waitForDNS(cfg.Domain, eip, 5*time.Minute)
             |
             v
 +-----------+----------+
+| Confirm resume?      |
+| [y/N]                |
++-----------+----------+
+            |
+            v
++-----------+----------+
 | StartInstance        |
 +-----------+----------+
             |
             v
 +-----------+----------+
 | Wait for Running     |
++-----------+----------+
+            |
+            v
++-----------+----------+
+| SSH connect          |
 +-----------+----------+
             |
             v
@@ -526,9 +641,21 @@ waitForDNS(cfg.Domain, eip, 5*time.Minute)
 +----------------------+
 ```
 
-`StartInstance` 后几秒恢复，Docker 容器随 `restart: unless-stopped` 自动启动。
+`StartInstance` 后几秒恢复，Docker 容器随 `restart: unless-stopped` 自动启动。resume 流程需重新建立 SSH 连接（suspend 时连接断开），然后通过 SSH 执行 `docker compose ps` 检查容器健康状态。
 
-#### 3.4.3 destroy 流程（可选保留快照）
+#### 3.4.3 deploy 与 suspended 状态的交互
+
+若当前实例状态为 `suspended`，执行 `cloudcode deploy` 时的行为：
+
+| 情况 | 行为 |
+|------|------|
+| `state.json` 中 `status: suspended` | 报错并提示用户使用 `cloudcode resume` |
+| `state.json` 中 `status: destroyed` 且 `backup.json` 存在 | 按快照恢复流程创建新 ECS |
+| `state.json` 不存在 | 全新部署 |
+
+suspended 实例已有完整资源（ECS/EIP/VPC 等），不应重新创建。`deploy` 仅用于首次部署或从快照恢复。
+
+#### 3.4.4 destroy 流程（可选保留快照）
 
 ```
 +----------------------+
@@ -537,12 +664,7 @@ waitForDNS(cfg.Domain, eip, 5*time.Minute)
             |
             v
 +-----------+----------+
-| Confirm with user    |
-+-----------+----------+
-            |
-            v
-+-----------+----------+
-| Keep snapshot?       |
+| Keep snapshot? [Y/n] |
 +----+----------+------+
     yes         no
      |           |
@@ -564,6 +686,12 @@ waitForDNS(cfg.Domain, eip, 5*time.Minute)
            |
            v
 +-----------+----------+
+| Confirm destroy?     |
+| [y/N]                |
++-----------+----------+
+            |
+            v
++-----------+----------+
 | Delete all resources |
 | (ECS, EIP, VPC,     |
 |  SG, VSwitch)        |
@@ -573,13 +701,17 @@ waitForDNS(cfg.Domain, eip, 5*time.Minute)
 交互提示：
 
 ```
-确认销毁所有云资源? [y/N]
 是否保留磁盘快照（下次 deploy 可恢复）? [Y/n]
+确认销毁所有云资源? [y/N]
 ```
+
+**为什么先 Stop ECS 再创建快照**：虽然阿里云支持在线创建快照，但停机后创建能确保数据一致性（文件系统缓存已刷新），避免恢复时出现数据损坏。
+
+**不保留快照时**：跳过停机和快照步骤，直接确认后删除。`DeleteInstance(Force=true)` 会自动停止运行中的实例再删除。
 
 快照创建失败时通过 `PromptConfirm("继续销毁（数据将丢失）?")` 让用户确认。
 
-#### 3.4.4 deploy 流程（从快照恢复）
+#### 3.4.5 deploy 流程（从快照恢复）
 
 ```
 +---------------------+
@@ -633,21 +765,16 @@ waitForDNS(cfg.Domain, eip, 5*time.Minute)
 
 从快照恢复的 ECS 包含完整旧环境。deploy 重新渲染配置文件并上传，通过 bind mount 覆盖旧配置。
 
-#### 3.4.5 备份元数据
+**快照恢复后的容器状态**：ECS 启动后，Docker 容器随 `restart: unless-stopped` 策略自动启动。`docker compose up -d` 会检测容器是否已存在：
+- 若容器已运行：无操作（幂等）
+- 若容器停止：启动容器
+- 若容器不存在：创建并启动
 
-`~/.cloudcode/backup.json`：
+#### 3.4.6 备份元数据
 
-```json
-{
-  "snapshot_id": "s-t4nxxxxxxxxx",
-  "cloudcode_version": "0.2.0",
-  "created_at": "2026-02-22T10:00:00Z",
-  "region": "ap-southeast-1",
-  "disk_size": 60
-}
-```
+`~/.cloudcode/backup.json`，格式见 [2.5.4](#254-backupjson-版本字段)。
 
-#### 3.4.6 新增/修改 ECS API
+#### 3.4.7 新增/修改 ECS API
 
 ```go
 // StopECSInstance 需增加 StoppedMode 参数
@@ -656,14 +783,14 @@ func StopECSInstance(ecsCli ECSAPI, instanceID string, stopCharging bool) error
 // 新增快照相关 API
 type ECSAPI interface {
     // ... existing methods ...
-    DescribeDisks(req) (*DescribeDisksResponse, error)
-    CreateSnapshot(req) (*CreateSnapshotResponse, error)
-    DescribeSnapshots(req) (*DescribeSnapshotsResponse, error)
-    DeleteSnapshot(req) (*DeleteSnapshotResponse, error)
+    DescribeDisks(req *ecs.DescribeDisksRequest) (*ecs.DescribeDisksResponse, error)
+    CreateSnapshot(req *ecs.CreateSnapshotRequest) (*ecs.CreateSnapshotResponse, error)
+    DescribeSnapshots(req *ecs.DescribeSnapshotsRequest) (*ecs.DescribeSnapshotsResponse, error)
+    DeleteSnapshot(req *ecs.DeleteSnapshotRequest) (*ecs.DeleteSnapshotResponse, error)
 }
 ```
 
-#### 3.4.7 state.json 扩展
+#### 3.4.8 state.json 扩展
 
 新增 `status` 字段跟踪实例状态：
 
@@ -678,9 +805,11 @@ type ECSAPI interface {
 |--------|------|
 | `running` | ECS 运行中 |
 | `suspended` | ECS 停机（StopCharging） |
-| `destroyed` | 已销毁（仅当保留快照时保留 state） |
+| `destroyed` | 已销毁（仅当保留快照时保留 state.json 和 backup.json） |
 
-#### 3.4.8 修改文件
+不保留快照时，同时删除 state.json 和 backup.json。
+
+#### 3.4.9 修改文件
 
 | 文件 | 改动 |
 |------|------|
@@ -695,12 +824,12 @@ type ECSAPI interface {
 | `cmd/cloudcode/main.go` | 新增 suspend/resume 命令 |
 | `tests/unit/` | 新增相关 mock 和测试 |
 
-#### 3.4.9 测试要点
+#### 3.4.10 测试要点
 
 - `suspend` 后 ECS 状态为 Stopped，不收计算费用
 - `resume` 后 ECS 恢复运行，Docker 容器自动启动
-- `destroy --keep-snapshot` 创建快照后删除所有资源
-- `destroy` 不保留快照时直接删除
+- 用户选择保留快照时，创建快照后删除所有资源，保留 backup.json
+- 用户不保留快照时直接删除，同时删除 backup.json
 - `deploy` 检测到快照时从快照创建 ECS
 - 恢复后 devbox 容器内所有内容完整
 - 恢复后新的 Caddyfile 正确渲染（新 EIP/域名）
@@ -710,12 +839,85 @@ type ECSAPI interface {
 
 ---
 
+### 3.5 cloudcode init — 统一配置管理
+
+#### 3.5.1 动机
+
+v0.1.x 通过环境变量（`ALICLOUD_ACCESS_KEY_ID`、`ALICLOUD_ACCESS_KEY_SECRET`、`ALICLOUD_REGION`）传递阿里云凭证。用户需要在 `.bashrc`/`.zshrc` 中手动设置，体验不佳。
+
+`cloudcode init` 采用 CLI 标准做法（类似 `aws configure`、`gcloud init`），一次配置后所有命令自动读取。
+
+#### 3.5.2 配置文件
+
+`~/.cloudcode/credentials`（权限 600）：
+
+```
+access_key_id = LTAI5t...
+access_key_secret = ...
+region = ap-southeast-1
+```
+
+使用 key=value 格式，方便用户手动编辑。
+
+#### 3.5.3 配置读取优先级
+
+```
+环境变量 → ~/.cloudcode/credentials → 报错提示 cloudcode init
+```
+
+环境变量优先，方便 CI/CD 场景覆盖。
+
+#### 3.5.4 目录结构
+
+```
+~/.cloudcode/
+├── credentials     # AccessKeyID、AccessKeySecret、Region（权限 600）
+├── state.json      # 部署状态、资源 ID
+├── backup.json     # 快照元数据（可选）
+└── ssh_key         # SSH 私钥（v0.1 已有）
+```
+
+#### 3.5.5 交互流程
+
+```
+$ cloudcode init
+阿里云 Access Key ID: ********
+阿里云 Access Key Secret: ********
+默认区域 [ap-southeast-1]:
+验证凭证... ✓
+配置已保存到 ~/.cloudcode/credentials
+```
+
+init 完成前调用 `GetCallerIdentity`（STS API）验证凭证有效性。
+
+#### 3.5.6 修改文件
+
+| 文件 | 改动 |
+|------|------|
+| `internal/alicloud/client.go` | `LoadConfigFromEnv` 改为 `LoadConfig`，支持 credentials 文件 + 环境变量 |
+| `internal/config/credentials.go` | 新增 credentials 文件读写 |
+| `cmd/cloudcode/main.go` | 新增 init 命令 |
+| `internal/alicloud/errors.go` | 错误信息改为提示 `cloudcode init` |
+| `tests/unit/` | 更新配置加载测试 |
+
+#### 3.5.7 测试要点
+
+- `cloudcode init` 交互式输入后正确保存 credentials 文件
+- credentials 文件权限为 600
+- 环境变量优先于 credentials 文件
+- 无环境变量且无 credentials 文件时报错提示 `cloudcode init`
+- 凭证验证失败时给出明确错误
+- 重复 `init` 覆盖旧配置（确认提示）
+
+---
+
 ## 4. 实现规划
 
 ### 4.1 优先级
 
 | 功能 | 优先级 | 理由 |
 |------|--------|------|
+| cloudcode init | P0 | 基础设施，所有命令依赖配置读取 |
 | 重命名 opencode → devbox | P0 | 基础重构，其他功能依赖 |
 | 自有域名 + 自动 DNS | P0 | 解决 HTTPS 证书不稳定的核心痛点 |
 | suspend/resume + 可选快照 | P0 | 支持按需使用模式 |
@@ -724,6 +926,11 @@ type ECSAPI interface {
 ### 4.2 依赖关系
 
 ```
++------------------+
+| 3.5 init         |
++--------+---------+
+         |
+         v
 +------------------+
 | 3.1 rename       |
 | opencode->devbox |
@@ -739,16 +946,17 @@ type ECSAPI interface {
 +-------+ +------+ +--------+
 ```
 
-3.2/3.3/3.4 互相独立，但都依赖 3.1 完成。
+3.5（init）是所有命令的前置条件。3.1（重命名）依赖 3.5。3.2/3.3/3.4 互相独立，但都依赖 3.1 完成。
 
 ### 4.3 实现步骤
 
 | 步骤 | 任务 | 依赖 |
 |------|------|------|
-| 1 | 重命名 opencode → devbox（3.1） | 无 |
-| 2 | 自有域名 + 自动 DNS（3.3） | 步骤 1 |
-| 3 | ECS 磁盘快照备份/恢复（3.4） | 步骤 1 |
-| 4 | 浏览器 Web Terminal（3.2） | 步骤 1 |
+| 1 | cloudcode init（3.5） | 无 |
+| 2 | 重命名 opencode → devbox（3.1） | 步骤 1 |
+| 3 | 自有域名 + 自动 DNS（3.3） | 步骤 2 |
+| 4 | suspend/resume + 可选快照（3.4） | 步骤 2 |
+| 5 | 浏览器 Web Terminal（3.2） | 步骤 2 |
 
 ---
 
@@ -756,19 +964,24 @@ type ECSAPI interface {
 
 v0.2.0 对月费用的影响：
 
-| 项目 | v0.1.x | v0.2.0 | 变化 |
-|------|--------|--------|------|
-| ECS 实例 | ~$20 | ~$20 | 不变 |
-| EIP | ~$3 | ~$3 | 不变 |
-| 磁盘快照（停机期间） | — | ~$0.40 | 新增 |
-| 阿里云 DNS | — | 免费 | — |
-| **总计（运行中）** | **~$23** | **~$23** | **不变** |
-| **总计（停机期间）** | **$0** | **~$0.40** | **+$0.40** |
+| 状态 | 月费用 | 说明 |
+|------|--------|------|
+| running | ~$23 | ECS + EIP |
+| suspended | ~$1.2 | 仅磁盘费用（StopCharging 模式） |
+| destroyed（保留快照） | ~$0.40 | 仅快照存储费用 |
+
+对比 v0.1.x：suspend 模式让停机期间费用从 ~$23 降至 ~$1.2，节省 ~95%。
 
 ---
 
 ## 变更记录
 
+- v1.9 (2026-02-24): CC+OC 联合 review — suspend/resume 补充交互确认；destroy 流程图体现两次确认；deploy 检测 suspended 改为报错提示 resume；3.3.1 补充两条 A 记录说明；3.3.5 改用完整域名示例；EnsureDNSRecord 注释明确为单条操作；2.5 新增版本定义（大版本/小版本）；Caddyfile 补充 8443 备用端口；3.3.7 补充 Authelia 配置模板；新增 3.5 cloudcode init 统一配置管理
+- v1.8 (2026-02-23): Authelia 恢复子域名模式（路径模式配置复杂易出错）；A 记录恢复为两条；3.1.2/3.2.6 修改文件表更新（docker-compose.yml.tmpl、docker.yml、render.go）；3.4 编号规范化（消除 3.4.2.1）；backup.json 去重引用；补充 StopCharging 与 EIP 行为说明；补充 destroy 不保留快照时的删除说明
+- v1.7 (2026-02-23): 修正 ENTRYPOINT 位置（应在 Dockerfile 最后）；补充快照前停机的原因说明；补充快照恢复后容器状态处理；补充 Caddy 路由优先级说明
+- v1.6 (2026-02-23): 补充 Dockerfile.devbox 细节 — 明确 ttyd 安装在 USER opencode 之前、补充 COPY entrypoint.sh 和 ENTRYPOINT 指令；resume 流程补充 SSH 连接步骤；3.2.6 修改文件表补充完整
+- v1.5 (2026-02-23): 重大修正 — opencode 不支持 base-path，改为保留根路径，仅 /terminal 使用 base-path；补充架构图；明确 deploy 与 suspended 状态交互；补充 ttyd 用户上下文说明；明确域名拆分示例
+- v1.4 (2026-02-23): 修正技术设计问题 — Caddyfile 补充 /auth 路由；A 记录从两条改为一条；destroy 流程图调整为先问快照再确认销毁；补充 StopCharging 前置条件；修复 Go API 代码格式；明确 backup.json 处理逻辑；修正测试要点描述
 - v1.3 (2026-02-22): 3.4 重写为 suspend/resume + 可选快照模型（ECS 停机不收费替代磁盘快照作为核心机制）；2.4 更新决策理由
 - v1.2 (2026-02-22): 简化 2.5 跨版本兼容策略（快照功能从 v0.2 引入，不存在 v0.1 快照，去掉具体迁移脚本，改为面向未来的通用策略）
 - v1.1 (2026-02-22): 根据 OC review 修订 — 补充快照生命周期策略（只保留最新）、deploy 流程增加 DNS 更新步骤、补充 ttyd 安全说明、明确快照失败确认机制、修正流程图对齐、opencode 路由改为 /opencode/*

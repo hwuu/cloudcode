@@ -21,6 +21,7 @@ session:
   cookies:
     - domain: {{ .Domain }}
       authelia_url: https://auth.{{ .Domain }}
+      default_redirection_url: https://{{ .Domain }}
       name: authelia_session
       same_site: lax
 

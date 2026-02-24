@@ -15,6 +15,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
+# 安装 ttyd（需要 root 权限，必须在 USER opencode 之前）
+ARG TARGETARCH
+RUN TTYD_ARCH=$(case "$TARGETARCH" in amd64) echo "x86_64" ;; arm64) echo "aarch64" ;; esac) && \
+    curl -fsSL -o /usr/local/bin/ttyd \
+    "https://github.com/tsl0922/ttyd/releases/latest/download/ttyd.${TTYD_ARCH}" && \
+    chmod +x /usr/local/bin/ttyd
+
+# 复制 entrypoint 脚本
+COPY internal/template/templates/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
 RUN useradd -m -s /bin/bash opencode \
     && echo "opencode ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/opencode \
     && chmod 0440 /etc/sudoers.d/opencode
@@ -31,7 +42,6 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | \
 USER opencode
 WORKDIR /home/opencode
 
-ARG TARGETARCH
 ARG OPENCODE_VERSION=latest
 RUN ARCH=$(case "$TARGETARCH" in amd64) echo "x64" ;; arm64) echo "arm64" ;; *) echo "$TARGETARCH" ;; esac) && \
     if [ "$OPENCODE_VERSION" = "latest" ]; then \
@@ -53,6 +63,6 @@ VOLUME ["/home/opencode/workspace"]
 VOLUME ["/home/opencode/.config/opencode"]
 VOLUME ["/home/opencode/.local/share/opencode"]
 
-EXPOSE 4096
+EXPOSE 4096 7681
 
-ENTRYPOINT ["opencode", "web", "--hostname", "0.0.0.0", "--port", "4096"]
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

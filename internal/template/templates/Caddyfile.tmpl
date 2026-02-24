@@ -7,14 +7,28 @@ auth.{{ .Domain }}:8443 {
     reverse_proxy authelia:9091
 }
 
-# 主域名 - OpenCode + forward_auth
+# 主域名 - Web Terminal + OpenCode + forward_auth
 {{ .Domain }} {
-    forward_auth authelia:9091 {
-        uri /api/authz/forward-auth
-        copy_headers Remote-User Remote-Groups Remote-Name Remote-Email
+    # Web Terminal（需认证）
+    # 使用 handle 而非 handle_path，保留 /terminal 前缀，
+    # 因为 ttyd 配置了 --base-path /terminal，期望收到带前缀的请求
+    handle /terminal/* {
+        forward_auth authelia:9091 {
+            uri /api/authz/forward-auth
+            copy_headers Remote-User Remote-Groups Remote-Name Remote-Email
+        }
+        reverse_proxy devbox:7681
     }
 
-    reverse_proxy devbox:4096
+    # OpenCode Web UI（需认证）
+    # opencode web 不支持 base-path，必须运行在根路径
+    handle {
+        forward_auth authelia:9091 {
+            uri /api/authz/forward-auth
+            copy_headers Remote-User Remote-Groups Remote-Name Remote-Email
+        }
+        reverse_proxy devbox:4096
+    }
 
     log {
         output stdout
@@ -23,12 +37,21 @@ auth.{{ .Domain }}:8443 {
 }
 
 {{ .Domain }}:8443 {
-    forward_auth authelia:9091 {
-        uri /api/authz/forward-auth
-        copy_headers Remote-User Remote-Groups Remote-Name Remote-Email
+    handle /terminal/* {
+        forward_auth authelia:9091 {
+            uri /api/authz/forward-auth
+            copy_headers Remote-User Remote-Groups Remote-Name Remote-Email
+        }
+        reverse_proxy devbox:7681
     }
 
-    reverse_proxy devbox:4096
+    handle {
+        forward_auth authelia:9091 {
+            uri /api/authz/forward-auth
+            copy_headers Remote-User Remote-Groups Remote-Name Remote-Email
+        }
+        reverse_proxy devbox:4096
+    }
 
     log {
         output stdout

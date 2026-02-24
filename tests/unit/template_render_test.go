@@ -66,6 +66,12 @@ func TestRenderCaddyfile(t *testing.T) {
 	if !strings.Contains(s, "reverse_proxy devbox:4096") {
 		t.Error("Caddyfile should contain devbox reverse proxy")
 	}
+	if !strings.Contains(s, "reverse_proxy devbox:7681") {
+		t.Error("Caddyfile should contain ttyd reverse proxy")
+	}
+	if !strings.Contains(s, "handle /terminal/*") {
+		t.Error("Caddyfile should contain /terminal route")
+	}
 	if !strings.Contains(s, "forward_auth") {
 		t.Error("Caddyfile should contain forward_auth")
 	}
@@ -177,6 +183,9 @@ func TestRenderDockerCompose(t *testing.T) {
 	}
 	if !strings.Contains(s, "ghcr.io/hwuu/cloudcode-devbox:"+data.Version) {
 		t.Error("docker-compose should contain versioned image tag")
+	}
+	if !strings.Contains(s, "init: true") {
+		t.Error("docker-compose devbox should have init: true for tini")
 	}
 }
 

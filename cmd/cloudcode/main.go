@@ -38,6 +38,8 @@ func newRootCmd() *cobra.Command {
 	rootCmd.AddCommand(newDeployCmd())
 	rootCmd.AddCommand(newStatusCmd())
 	rootCmd.AddCommand(newDestroyCmd())
+	rootCmd.AddCommand(newSuspendCmd())
+	rootCmd.AddCommand(newResumeCmd())
 	rootCmd.AddCommand(newOTCCmd())
 	rootCmd.AddCommand(newLogsCmd())
 	rootCmd.AddCommand(newSSHCmd())
@@ -224,6 +226,7 @@ func newDestroyCmd() *cobra.Command {
 				Prompter: prompter,
 				Output:   os.Stdout,
 				Region:   cfg.RegionID,
+				Version:  version,
 			}
 
 			return d.Run(cmd.Context(), force, dryRun)
@@ -234,6 +237,59 @@ func newDestroyCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "仅展示将要删除的资源，不实际删除")
 
 	return cmd
+}
+
+func newSuspendCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "suspend",
+		Short: "停机省钱（StopCharging 模式）",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := alicloud.LoadConfig()
+			if err != nil {
+				return fmt.Errorf("阿里云配置错误: %w", err)
+			}
+			clients, err := alicloud.NewClients(cfg)
+			if err != nil {
+				return fmt.Errorf("初始化阿里云 SDK 失败: %w", err)
+			}
+			prompter := config.NewPrompter(os.Stdin, os.Stdout)
+			s := &deploy.Suspender{
+				ECS:      clients.ECS,
+				Prompter: prompter,
+				Output:   os.Stdout,
+				Region:   cfg.RegionID,
+			}
+			return s.Run(cmd.Context())
+		},
+	}
+}
+
+func newResumeCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "resume",
+		Short: "恢复运行",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := alicloud.LoadConfig()
+			if err != nil {
+				return fmt.Errorf("阿里云配置错误: %w", err)
+			}
+			clients, err := alicloud.NewClients(cfg)
+			if err != nil {
+				return fmt.Errorf("初始化阿里云 SDK 失败: %w", err)
+			}
+			prompter := config.NewPrompter(os.Stdin, os.Stdout)
+			r := &deploy.Resumer{
+				ECS:      clients.ECS,
+				Prompter: prompter,
+				Output:   os.Stdout,
+				Region:   cfg.RegionID,
+				SSHDialFunc: func(host string, port int, user string, privateKey []byte) remote.DialFunc {
+					return remote.NewSSHDialFunc(host, port, user, privateKey)
+				},
+			}
+			return r.Run(cmd.Context())
+		},
+	}
 }
 
 func newVersionCmd() *cobra.Command {

@@ -87,6 +87,7 @@ type State struct {
 	CreatedAt string          `json:"created_at"`
 	Region    string          `json:"region"`
 	OSImage   string          `json:"os_image"`
+	Status    string          `json:"status,omitempty"` // running / suspended / destroyed
 	Resources Resources       `json:"resources"`
 	CloudCode CloudCodeConfig `json:"cloudcode"`
 }

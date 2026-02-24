@@ -64,6 +64,7 @@ type Deployer struct {
 	WaitTimeout      time.Duration // ECS 等待超时（测试用，默认 5min）
 	Version          string        // Docker 镜像版本号
 	DNSWaitTimeout   time.Duration // DNS 生效等待超时（默认 5min）
+	SnapshotID       string        // 从快照恢复时的快照 ID
 }
 
 func (d *Deployer) printf(format string, args ...interface{}) {
@@ -222,7 +223,7 @@ func (d *Deployer) CreateResources(ctx context.Context, state *config.State, ssh
 			d.ECS, d.Region, zoneID,
 			alicloud.DefaultInstanceType, alicloud.DefaultImageID,
 			state.Resources.SecurityGroup.ID, state.Resources.VSwitch.ID,
-			state.Resources.SSHKeyPair.Name, "cloudcode-ecs",
+			state.Resources.SSHKeyPair.Name, "cloudcode-ecs", d.SnapshotID,
 		)
 		if err != nil {
 			return err
@@ -236,6 +237,12 @@ func (d *Deployer) CreateResources(ctx context.Context, state *config.State, ssh
 			return err
 		}
 		d.printf("  ✓ 创建 ECS 实例 (%s)\n", ecs.ID)
+
+		// 清理从快照创建的临时镜像
+		if ecs.TempImageID != "" {
+			_ = alicloud.DeleteImage(d.ECS, ecs.TempImageID, d.Region)
+			d.printf("  ✓ 清理临时镜像 (%s)\n", ecs.TempImageID)
+		}
 
 		// 等待实例就绪（Pending → Stopped）
 		if err := alicloud.WaitForInstanceStatus(ctx, d.ECS, ecs.ID, d.Region, "Stopped", d.WaitInterval, d.WaitTimeout); err != nil {
@@ -520,6 +527,34 @@ func (d *Deployer) Run(ctx context.Context, force bool) error {
 		state = config.NewState(d.Region, alicloud.DefaultImageID)
 	}
 
+	// 检查已有实例状态
+	if state.Status == "running" {
+		d.printf("\n已有运行中的实例，无需重新部署。\n")
+		d.printf("  查看状态: cloudcode status\n")
+		d.printf("  重新部署应用层: cloudcode deploy --force\n")
+		if !force {
+			return nil
+		}
+	}
+	if state.Status == "suspended" {
+		return fmt.Errorf("实例已停机，请使用 cloudcode resume 恢复运行")
+	}
+
+	// 从快照恢复
+	if state.Status == "destroyed" {
+		dir := d.getStateDir()
+		backup, _ := config.LoadBackupFrom(dir)
+		if backup != nil && backup.SnapshotID != "" {
+			d.printf("\n检测到快照 (%s)，将从快照恢复部署。\n", backup.SnapshotID)
+			d.SnapshotID = backup.SnapshotID
+			// 重置资源（destroyed 状态下资源已删除）
+			state = config.NewState(d.Region, alicloud.DefaultImageID)
+		} else {
+			// destroyed 但无快照，全新部署
+			state = config.NewState(d.Region, alicloud.DefaultImageID)
+		}
+	}
+
 	if state.IsComplete() && !force {
 		d.printf("\n已检测到完整部署，使用 --force 重新部署应用层\n")
 		return nil
@@ -553,6 +588,7 @@ func (d *Deployer) Run(ctx context.Context, force bool) error {
 	// 更新 state
 	state.CloudCode.Username = cfg.Username
 	state.CloudCode.Domain = cfg.Domain
+	state.Status = "running"
 
 	// 阶段 4: 部署应用
 	if err := d.DeployApp(ctx, state, cfg); err != nil {

@@ -348,7 +348,7 @@ func TestCreateECSInstance_Success(t *testing.T) {
 		},
 	}
 
-	ecs, err := alicloud.CreateECSInstance(mockECS, regionID, zoneID, "", "", sgID, vswitchID, sshKeyName, "test-instance")
+	ecs, err := alicloud.CreateECSInstance(mockECS, regionID, zoneID, "", "", sgID, vswitchID, sshKeyName, "test-instance", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

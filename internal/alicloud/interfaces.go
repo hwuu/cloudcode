@@ -35,7 +35,7 @@ type VPCAPI interface {
 	UnassociateEipAddress(req *vpcclient.UnassociateEipAddressRequest) (*vpcclient.UnassociateEipAddressResponse, error)
 }
 
-// ECSAPI 云服务器接口，管理 ECS 实例/安全组/SSH 密钥对/可用区
+// ECSAPI 云服务器接口，管理 ECS 实例/安全组/SSH 密钥对/可用区/快照
 type ECSAPI interface {
 	// ECS 实例生命周期
 	CreateInstance(req *ecsclient.CreateInstanceRequest) (*ecsclient.CreateInstanceResponse, error)
@@ -59,6 +59,17 @@ type ECSAPI interface {
 	DeleteSecurityGroup(req *ecsclient.DeleteSecurityGroupRequest) (*ecsclient.DeleteSecurityGroupResponse, error)
 	DescribeSecurityGroups(req *ecsclient.DescribeSecurityGroupsRequest) (*ecsclient.DescribeSecurityGroupsResponse, error)
 	AuthorizeSecurityGroup(req *ecsclient.AuthorizeSecurityGroupRequest) (*ecsclient.AuthorizeSecurityGroupResponse, error)
+
+	// 磁盘与快照管理
+	DescribeDisks(req *ecsclient.DescribeDisksRequest) (*ecsclient.DescribeDisksResponse, error)
+	CreateSnapshot(req *ecsclient.CreateSnapshotRequest) (*ecsclient.CreateSnapshotResponse, error)
+	DescribeSnapshots(req *ecsclient.DescribeSnapshotsRequest) (*ecsclient.DescribeSnapshotsResponse, error)
+	DeleteSnapshot(req *ecsclient.DeleteSnapshotRequest) (*ecsclient.DeleteSnapshotResponse, error)
+
+	// 自定义镜像管理（快照恢复时使用）
+	CreateImage(req *ecsclient.CreateImageRequest) (*ecsclient.CreateImageResponse, error)
+	DescribeImages(req *ecsclient.DescribeImagesRequest) (*ecsclient.DescribeImagesResponse, error)
+	DeleteImage(req *ecsclient.DeleteImageRequest) (*ecsclient.DeleteImageResponse, error)
 }
 
 // DnsAPI 云解析 DNS 接口，管理域名和解析记录

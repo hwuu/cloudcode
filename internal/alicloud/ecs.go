@@ -36,6 +36,7 @@ type ECSResource struct {
 	PublicIP     string
 	PrivateIP    string
 	ZoneID       string
+	TempImageID  string // 从快照恢复时创建的临时镜像 ID，调用方应清理
 }
 
 // ZoneInfo 可用区信息
@@ -103,7 +104,9 @@ func SelectAvailableZone(ecsCli ECSAPI, regionID, instanceType string, preferred
 }
 
 // CreateECSInstance 创建 ECS 实例（按量付费，不分配公网 IP，通过 EIP 访问）
-func CreateECSInstance(ecsCli ECSAPI, regionID, zoneID, instanceType, imageID, sgID, vswitchID, sshKeyName, instanceName string) (*ECSResource, error) {
+// snapshotID 非空时先从快照创建自定义镜像，再用该镜像创建实例。
+// 返回的 ECSResource.ImageID 非空时，调用方应在实例就绪后调用 DeleteImage 清理临时镜像。
+func CreateECSInstance(ecsCli ECSAPI, regionID, zoneID, instanceType, imageID, sgID, vswitchID, sshKeyName, instanceName, snapshotID string) (*ECSResource, error) {
 	if instanceType == "" {
 		instanceType = DefaultInstanceType
 	}
@@ -128,6 +131,18 @@ func CreateECSInstance(ecsCli ECSAPI, regionID, zoneID, instanceType, imageID, s
 		},
 	}
 
+	if snapshotID != "" {
+		// 从快照创建自定义镜像，再用该镜像创建实例
+		imgID, err := CreateImageFromSnapshot(ecsCli, snapshotID, regionID, "cloudcode-restore")
+		if err != nil {
+			return nil, fmt.Errorf("从快照创建镜像失败: %w", err)
+		}
+		if err := WaitForImageReady(context.Background(), ecsCli, imgID, regionID, 0, 0); err != nil {
+			return nil, fmt.Errorf("等待镜像就绪失败: %w", err)
+		}
+		imageID = imgID
+	}
+
 	if sshKeyName != "" {
 		req.KeyPairName = &sshKeyName
 	}
@@ -141,11 +156,15 @@ func CreateECSInstance(ecsCli ECSAPI, regionID, zoneID, instanceType, imageID, s
 		return nil, fmt.Errorf("invalid response from CreateInstance")
 	}
 
-	return &ECSResource{
+	result := &ECSResource{
 		ID:           *resp.Body.InstanceId,
 		InstanceType: instanceType,
 		ZoneID:       zoneID,
-	}, nil
+	}
+	if snapshotID != "" {
+		result.TempImageID = imageID // 临时镜像，调用方应清理
+	}
+	return result, nil
 }
 
 // StartECSInstance 启动 ECS 实例（实例必须处于 Stopped 状态）
@@ -157,12 +176,16 @@ func StartECSInstance(ecsCli ECSAPI, instanceID string) error {
 	return err
 }
 
-// StopECSInstance 强制停止 ECS 实例
-func StopECSInstance(ecsCli ECSAPI, instanceID string) error {
+// StopECSInstance 停止 ECS 实例
+// stopCharging=true 时使用 StopCharging 模式，释放 CPU/内存不收费
+func StopECSInstance(ecsCli ECSAPI, instanceID string, stopCharging bool) error {
 	forceStop := true
 	req := &ecsclient.StopInstanceRequest{
 		InstanceId: &instanceID,
 		ForceStop:  &forceStop,
+	}
+	if stopCharging {
+		req.StoppedMode = teaString("StopCharging")
 	}
 	_, err := ecsCli.StopInstance(req)
 	return err
@@ -397,6 +420,169 @@ func ImportSSHKeyPair(ecsCli ECSAPI, keyName, publicKey string) (*SSHKeyPairReso
 	}
 
 	return result, nil
+}
+
+// GetSystemDiskID 获取 ECS 实例的系统盘 ID
+func GetSystemDiskID(ecsCli ECSAPI, instanceID, regionID string) (string, error) {
+	diskType := "system"
+	req := &ecsclient.DescribeDisksRequest{
+		InstanceId: &instanceID,
+		RegionId:   &regionID,
+		DiskType:   &diskType,
+	}
+	resp, err := ecsCli.DescribeDisks(req)
+	if err != nil {
+		return "", fmt.Errorf("查询系统盘失败: %w", err)
+	}
+	if resp == nil || resp.Body == nil || resp.Body.Disks == nil ||
+		resp.Body.Disks.Disk == nil || len(resp.Body.Disks.Disk) == 0 {
+		return "", fmt.Errorf("未找到系统盘")
+	}
+	disk := resp.Body.Disks.Disk[0]
+	if disk.DiskId == nil {
+		return "", fmt.Errorf("系统盘 ID 为空")
+	}
+	return *disk.DiskId, nil
+}
+
+// CreateDiskSnapshot 创建磁盘快照
+func CreateDiskSnapshot(ecsCli ECSAPI, diskID, snapshotName string) (string, error) {
+	req := &ecsclient.CreateSnapshotRequest{
+		DiskId:       &diskID,
+		SnapshotName: &snapshotName,
+	}
+	resp, err := ecsCli.CreateSnapshot(req)
+	if err != nil {
+		return "", fmt.Errorf("创建快照失败: %w", err)
+	}
+	if resp == nil || resp.Body == nil || resp.Body.SnapshotId == nil {
+		return "", fmt.Errorf("创建快照返回无效响应")
+	}
+	return *resp.Body.SnapshotId, nil
+}
+
+// WaitForSnapshotReady 等待快照创建完成
+func WaitForSnapshotReady(ctx context.Context, ecsCli ECSAPI, snapshotID, regionID string, interval, timeout time.Duration) error {
+	if interval == 0 {
+		interval = DefaultWaitInterval
+	}
+	if timeout == 0 {
+		timeout = 10 * time.Minute // 快照可能较慢
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("等待快照完成超时")
+		case <-ticker.C:
+			req := &ecsclient.DescribeSnapshotsRequest{
+				SnapshotIds: teaString(fmt.Sprintf(`["%s"]`, snapshotID)),
+				RegionId:    &regionID,
+			}
+			resp, err := ecsCli.DescribeSnapshots(req)
+			if err != nil {
+				continue
+			}
+			if resp == nil || resp.Body == nil || resp.Body.Snapshots == nil ||
+				resp.Body.Snapshots.Snapshot == nil || len(resp.Body.Snapshots.Snapshot) == 0 {
+				continue
+			}
+			snap := resp.Body.Snapshots.Snapshot[0]
+			if snap.Status != nil && *snap.Status == "accomplished" {
+				return nil
+			}
+		}
+	}
+}
+
+// DeleteSnapshot 删除快照
+func DeleteSnapshot(ecsCli ECSAPI, snapshotID string) error {
+	req := &ecsclient.DeleteSnapshotRequest{
+		SnapshotId: &snapshotID,
+	}
+	_, err := ecsCli.DeleteSnapshot(req)
+	if err != nil {
+		return fmt.Errorf("删除快照失败: %w", err)
+	}
+	return nil
+}
+
+// CreateImageFromSnapshot 从快照创建自定义镜像
+func CreateImageFromSnapshot(ecsCli ECSAPI, snapshotID, regionID, imageName string) (string, error) {
+	req := &ecsclient.CreateImageRequest{
+		SnapshotId: &snapshotID,
+		RegionId:   &regionID,
+		ImageName:  &imageName,
+	}
+	resp, err := ecsCli.CreateImage(req)
+	if err != nil {
+		return "", fmt.Errorf("创建镜像失败: %w", err)
+	}
+	if resp == nil || resp.Body == nil || resp.Body.ImageId == nil {
+		return "", fmt.Errorf("创建镜像返回无效响应")
+	}
+	return *resp.Body.ImageId, nil
+}
+
+// WaitForImageReady 等待自定义镜像创建完成
+func WaitForImageReady(ctx context.Context, ecsCli ECSAPI, imageID, regionID string, interval, timeout time.Duration) error {
+	if interval == 0 {
+		interval = DefaultWaitInterval
+	}
+	if timeout == 0 {
+		timeout = 10 * time.Minute
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("等待镜像就绪超时")
+		case <-ticker.C:
+			req := &ecsclient.DescribeImagesRequest{
+				ImageId:  &imageID,
+				RegionId: &regionID,
+			}
+			resp, err := ecsCli.DescribeImages(req)
+			if err != nil {
+				continue
+			}
+			if resp == nil || resp.Body == nil || resp.Body.Images == nil ||
+				resp.Body.Images.Image == nil || len(resp.Body.Images.Image) == 0 {
+				continue
+			}
+			img := resp.Body.Images.Image[0]
+			if img.Status != nil && *img.Status == "Available" {
+				return nil
+			}
+		}
+	}
+}
+
+// DeleteImage 删除自定义镜像
+func DeleteImage(ecsCli ECSAPI, imageID, regionID string) error {
+	force := true
+	req := &ecsclient.DeleteImageRequest{
+		ImageId:  &imageID,
+		RegionId: &regionID,
+		Force:    &force,
+	}
+	_, err := ecsCli.DeleteImage(req)
+	if err != nil {
+		return fmt.Errorf("删除镜像失败: %w", err)
+	}
+	return nil
 }
 
 func teaString(s string) *string {

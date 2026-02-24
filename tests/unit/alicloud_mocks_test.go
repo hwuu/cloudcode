@@ -104,6 +104,13 @@ type MockECSAPI struct {
 	DeleteSecurityGroupFunc     func(req *ecsclient.DeleteSecurityGroupRequest) (*ecsclient.DeleteSecurityGroupResponse, error)
 	DescribeSecurityGroupsFunc  func(req *ecsclient.DescribeSecurityGroupsRequest) (*ecsclient.DescribeSecurityGroupsResponse, error)
 	AuthorizeSecurityGroupFunc  func(req *ecsclient.AuthorizeSecurityGroupRequest) (*ecsclient.AuthorizeSecurityGroupResponse, error)
+	DescribeDisksFunc           func(req *ecsclient.DescribeDisksRequest) (*ecsclient.DescribeDisksResponse, error)
+	CreateSnapshotFunc          func(req *ecsclient.CreateSnapshotRequest) (*ecsclient.CreateSnapshotResponse, error)
+	DescribeSnapshotsFunc       func(req *ecsclient.DescribeSnapshotsRequest) (*ecsclient.DescribeSnapshotsResponse, error)
+	DeleteSnapshotFunc          func(req *ecsclient.DeleteSnapshotRequest) (*ecsclient.DeleteSnapshotResponse, error)
+	CreateImageFunc             func(req *ecsclient.CreateImageRequest) (*ecsclient.CreateImageResponse, error)
+	DescribeImagesFunc          func(req *ecsclient.DescribeImagesRequest) (*ecsclient.DescribeImagesResponse, error)
+	DeleteImageFunc             func(req *ecsclient.DeleteImageRequest) (*ecsclient.DeleteImageResponse, error)
 }
 
 func (m *MockECSAPI) CreateInstance(req *ecsclient.CreateInstanceRequest) (*ecsclient.CreateInstanceResponse, error) {
@@ -182,6 +189,55 @@ func (m *MockECSAPI) AuthorizeSecurityGroup(req *ecsclient.AuthorizeSecurityGrou
 		return &ecsclient.AuthorizeSecurityGroupResponse{}, nil
 	}
 	return m.AuthorizeSecurityGroupFunc(req)
+}
+
+func (m *MockECSAPI) DescribeDisks(req *ecsclient.DescribeDisksRequest) (*ecsclient.DescribeDisksResponse, error) {
+	if m.DescribeDisksFunc == nil {
+		return &ecsclient.DescribeDisksResponse{}, nil
+	}
+	return m.DescribeDisksFunc(req)
+}
+
+func (m *MockECSAPI) CreateSnapshot(req *ecsclient.CreateSnapshotRequest) (*ecsclient.CreateSnapshotResponse, error) {
+	if m.CreateSnapshotFunc == nil {
+		return &ecsclient.CreateSnapshotResponse{}, nil
+	}
+	return m.CreateSnapshotFunc(req)
+}
+
+func (m *MockECSAPI) DescribeSnapshots(req *ecsclient.DescribeSnapshotsRequest) (*ecsclient.DescribeSnapshotsResponse, error) {
+	if m.DescribeSnapshotsFunc == nil {
+		return &ecsclient.DescribeSnapshotsResponse{}, nil
+	}
+	return m.DescribeSnapshotsFunc(req)
+}
+
+func (m *MockECSAPI) DeleteSnapshot(req *ecsclient.DeleteSnapshotRequest) (*ecsclient.DeleteSnapshotResponse, error) {
+	if m.DeleteSnapshotFunc == nil {
+		return &ecsclient.DeleteSnapshotResponse{}, nil
+	}
+	return m.DeleteSnapshotFunc(req)
+}
+
+func (m *MockECSAPI) CreateImage(req *ecsclient.CreateImageRequest) (*ecsclient.CreateImageResponse, error) {
+	if m.CreateImageFunc == nil {
+		return &ecsclient.CreateImageResponse{}, nil
+	}
+	return m.CreateImageFunc(req)
+}
+
+func (m *MockECSAPI) DescribeImages(req *ecsclient.DescribeImagesRequest) (*ecsclient.DescribeImagesResponse, error) {
+	if m.DescribeImagesFunc == nil {
+		return &ecsclient.DescribeImagesResponse{}, nil
+	}
+	return m.DescribeImagesFunc(req)
+}
+
+func (m *MockECSAPI) DeleteImage(req *ecsclient.DeleteImageRequest) (*ecsclient.DeleteImageResponse, error) {
+	if m.DeleteImageFunc == nil {
+		return &ecsclient.DeleteImageResponse{}, nil
+	}
+	return m.DeleteImageFunc(req)
 }
 
 type MockDnsAPI struct {

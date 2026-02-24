@@ -4,6 +4,7 @@ package alicloud
 // 每个接口对应一个阿里云产品 SDK，仅暴露 CloudCode 实际使用的方法。
 
 import (
+	dnsclient "github.com/alibabacloud-go/alidns-20150109/v4/client"
 	ecsclient "github.com/alibabacloud-go/ecs-20140526/v4/client"
 	stsclient "github.com/alibabacloud-go/sts-20150401/v2/client"
 	vpcclient "github.com/alibabacloud-go/vpc-20160428/v6/client"
@@ -58,4 +59,12 @@ type ECSAPI interface {
 	DeleteSecurityGroup(req *ecsclient.DeleteSecurityGroupRequest) (*ecsclient.DeleteSecurityGroupResponse, error)
 	DescribeSecurityGroups(req *ecsclient.DescribeSecurityGroupsRequest) (*ecsclient.DescribeSecurityGroupsResponse, error)
 	AuthorizeSecurityGroup(req *ecsclient.AuthorizeSecurityGroupRequest) (*ecsclient.AuthorizeSecurityGroupResponse, error)
+}
+
+// DnsAPI 云解析 DNS 接口，管理域名和解析记录
+type DnsAPI interface {
+	DescribeDomains(req *dnsclient.DescribeDomainsRequest) (*dnsclient.DescribeDomainsResponse, error)
+	DescribeDomainRecords(req *dnsclient.DescribeDomainRecordsRequest) (*dnsclient.DescribeDomainRecordsResponse, error)
+	AddDomainRecord(req *dnsclient.AddDomainRecordRequest) (*dnsclient.AddDomainRecordResponse, error)
+	UpdateDomainRecord(req *dnsclient.UpdateDomainRecordRequest) (*dnsclient.UpdateDomainRecordResponse, error)
 }

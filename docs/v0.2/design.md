@@ -706,12 +706,21 @@ waitForDNS(cfg.Domain, eip, 5*time.Minute)
 
 | 情况 | 行为 |
 |------|------|
-| `state.json` 中 `status: running` | 报错并提示已有运行中实例 |
+| `state.json` 中 `status: running` | 提示已有运行中实例，建议 `cloudcode deploy --app` 重部署应用层 |
 | `state.json` 中 `status: suspended` | 报错并提示用户使用 `cloudcode resume` |
-| `state.json` 中 `status: destroyed` 且 `backup.json` 存在 | 按快照恢复流程创建新 ECS |
+| `state.json` 中 `status: destroyed` 且 `backup.json` 存在 | 按快照恢复流程创建新 ECS（零交互，见 3.4.5） |
 | `state.json` 不存在 | 全新部署 |
 
 running/suspended 实例已有完整资源（ECS/EIP/VPC 等），不应重新创建。`deploy` 仅用于首次部署或从快照恢复。
+
+`deploy --app` 仅重部署应用层（重新渲染配置 + pull + up），跳过云资源创建和交互配置。适用于更新 Caddyfile、docker-compose.yml 等配置后重新部署。`--app` 模式跳过 Authelia 配置上传（密码哈希和 secrets 已在磁盘上，避免 encryption key 不匹配）。
+
+**其他命令在非 running 状态下的行为**：
+
+| 命令 | suspended | destroyed |
+|------|-----------|-----------|
+| `status` | 显示"已停机"，提示 `cloudcode resume` | 显示"已销毁"，提示 `cloudcode deploy` |
+| `ssh` / `exec` / `otc` / `logs` | 报错提示 `cloudcode resume` | 报错提示 `cloudcode deploy` |
 
 #### 3.4.4 destroy 流程（可选保留快照）
 
@@ -770,9 +779,23 @@ running/suspended 实例已有完整资源（ECS/EIP/VPC 等），不应重新�
 
 **不保留快照时**：跳过停机和快照步骤，直接确认后删除。`DeleteInstance(Force=true)` 会自动停止运行中的实例再删除。
 
-快照创建失败时通过 `PromptConfirm("继续销毁（数据将丢失）?")` 让用户确认。
+快照创建失败时通过 `PromptConfirm("继续销毁（数据将丢失）?", false)` 让用户确认。
+
+**确认提示默认值原则**：
+
+| 场景 | 默认值 | 原则 |
+|------|--------|------|
+| 保留快照 | Y | 保护数据 |
+| 确认销毁 | N | 不可逆操作 |
+| 快照失败继续销毁 | N | 不可逆操作 |
+| 确认停机 (suspend) | Y | 用户主动发起 |
+| 确认恢复 (resume) | Y | 用户主动发起 |
+| 覆盖已有配置 (init) | N | 保护数据 |
+| 验证失败重试 (init) | Y | 用户主动发起 |
 
 #### 3.4.5 deploy 流程（从快照恢复）
+
+从快照恢复为零交互流程：域名和用户名从 `backup.json` 读取，密码哈希和 Authelia secrets 在磁盘快照中保留。
 
 ```
 +---------------------+
@@ -787,10 +810,17 @@ running/suspended 实例已有完整资源（ECS/EIP/VPC 等），不应重新�
      |           |
      v           v
 +----+--------+ +----+--------+
-| CreateInst  | | CreateInst  |
-| with        | | with        |
-| SnapshotId  | | fresh disk  |
+| Read domain | | PromptConfig|
+| & username  | | (interactive|
+| from backup | |  input)     |
 +----+--------+ +----+--------+
+     |           |
+     v           |
++----+--------+  |
+| Snapshot →  |  |
+| Image →     |  |
+| CreateInst  |  |
++----+--------+  |
      |           |
      +-----+-----+
            |
@@ -824,7 +854,11 @@ running/suspended 实例已有完整资源（ECS/EIP/VPC 等），不应重新�
 +---------------------+
 ```
 
-从快照恢复的 ECS 包含完整旧环境。deploy 重新渲染配置文件并上传，通过 bind mount 覆盖旧配置。
+从快照恢复的 ECS 包含完整旧环境。deploy 重新渲染非 Authelia 配置文件（Caddyfile、docker-compose.yml、.env）并上传。Authelia 配置（configuration.yml、users_database.yml）保留磁盘快照中的版本，避免 encryption key 不匹配导致 Authelia 启动失败。
+
+**快照恢复时为什么跳过 Authelia 配置**：Authelia 的 `storage.encryption_key` 用于加密 `db.sqlite3`。每次 deploy 会重新生成 secrets，如果覆盖配置文件，新 key 与旧 db 不匹配，Authelia 无法启动。
+
+**快照恢复时为什么不需要自定义镜像清理**：阿里云 ECS SDK 的 `CreateInstanceRequestSystemDisk` 不支持直接指定 `SnapshotId`。实现上先从快照创建自定义镜像，再用该镜像创建 ECS，实例创建成功后立即删除临时镜像（避免存储费用）。
 
 **快照恢复后的容器状态**：ECS 启动后，Docker 容器随 `restart: unless-stopped` 策略自动启动。`docker compose up -d` 会检测容器是否已存在：
 - 若容器已运行：无操作（幂等）
@@ -841,13 +875,17 @@ running/suspended 实例已有完整资源（ECS/EIP/VPC 等），不应重新�
 // StopECSInstance 需增加 StoppedMode 参数
 func StopECSInstance(ecsCli ECSAPI, instanceID string, stopCharging bool) error
 
-// 新增快照相关 API
+// 新增快照和镜像相关 API
 type ECSAPI interface {
     // ... existing methods ...
     DescribeDisks(req *ecs.DescribeDisksRequest) (*ecs.DescribeDisksResponse, error)
     CreateSnapshot(req *ecs.CreateSnapshotRequest) (*ecs.CreateSnapshotResponse, error)
     DescribeSnapshots(req *ecs.DescribeSnapshotsRequest) (*ecs.DescribeSnapshotsResponse, error)
     DeleteSnapshot(req *ecs.DeleteSnapshotRequest) (*ecs.DeleteSnapshotResponse, error)
+    // 自定义镜像（快照恢复时使用：快照 → 镜像 → ECS）
+    CreateImage(req *ecs.CreateImageRequest) (*ecs.CreateImageResponse, error)
+    DescribeImages(req *ecs.DescribeImagesRequest) (*ecs.DescribeImagesResponse, error)
+    DeleteImage(req *ecs.DeleteImageRequest) (*ecs.DeleteImageResponse, error)
 }
 ```
 
@@ -1070,6 +1108,8 @@ v0.2.0 对月费用的影响：
 ---
 
 ## 变更记录
+
+- v1.13 (2026-02-25): 实现反馈更新 — `--force` 移除，改为 `deploy --app`（仅重部署应用层，零交互）；快照恢复零交互（域名/用户名从 backup.json 读取，Authelia 配置保留磁盘版本避免 encryption key 不匹配）；PromptConfirm 统一接口并明确默认值原则（用户主动操作默认 Y，不可逆操作默认 N）；destroy 默认保留快照；suspended/destroyed 状态下 ssh/exec/status 等命令友好提示；ECSAPI 新增镜像方法（快照→镜像→ECS 流程）；3.4.5 流程图更新
 
 - v1.12 (2026-02-24): suspend/resume 流程图补充取消分支，与 destroy 流程图保持一致
 - v1.11 (2026-02-24): CC+OC 第三轮 review — 修复 handle_path 与 ttyd --base-path 冲突（改用 handle 保留路径前缀）；架构图统一容器名为 devbox 并简化去重；credentials 解析明确只取第一个 = 分割；4.2 依赖图重画；3.4.3 标题更新覆盖 running 状态；1.3 非目标补充"不支持配置热更新"；补充 handle vs handle_path 说明

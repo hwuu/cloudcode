@@ -581,10 +581,38 @@ func (d *Deployer) Run(ctx context.Context, force bool) error {
 		return nil
 	}
 
-	// 阶段 2: 交互配置（始终收集，--force 也需要）
-	cfg, err := d.PromptConfig(ctx)
-	if err != nil {
-		return err
+	// 阶段 2: 交互配置
+	var cfg *DeployConfig
+	if force && state.CloudCode.Username != "" && state.CloudCode.Domain != "" {
+		// --force 且已有配置，复用现有配置，仅需重新输入密码
+		d.printf("\n[2/5] 使用现有配置:\n")
+		d.printf("  域名: %s\n", state.CloudCode.Domain)
+		d.printf("  用户名: %s\n", state.CloudCode.Username)
+
+		password, err := d.Prompter.PromptPassword("请输入管理员密码: ")
+		if err != nil {
+			return err
+		}
+		confirmPassword, err := d.Prompter.PromptPassword("请确认管理员密码: ")
+		if err != nil {
+			return err
+		}
+		if password != confirmPassword {
+			return fmt.Errorf("两次输入的密码不一致")
+		}
+
+		cfg = &DeployConfig{
+			Domain:   state.CloudCode.Domain,
+			Username: state.CloudCode.Username,
+			Password: password,
+			Email:    state.CloudCode.Username + "@localhost",
+		}
+	} else {
+		var err error
+		cfg, err = d.PromptConfig(ctx)
+		if err != nil {
+			return err
+		}
 	}
 
 	// 阶段 3: 创建云资源（--force 跳过）

@@ -13,6 +13,8 @@ import (
 )
 
 func TestLoadConfigFromEnv_MissingAccessKeyID(t *testing.T) {
+	t.Setenv("ALICLOUD_ACCESS_KEY_ID", "")
+	t.Setenv("ALICLOUD_ACCESS_KEY_SECRET", "")
 	cfg, err := alicloud.LoadConfigFromEnv()
 	if err == nil {
 		t.Error("expected error when ALICLOUD_ACCESS_KEY_ID is not set")

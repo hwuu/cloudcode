@@ -10,6 +10,7 @@ import (
 var (
 	ErrMissingAccessKeyID     = errors.New("ALICLOUD_ACCESS_KEY_ID environment variable is not set")
 	ErrMissingAccessKeySecret = errors.New("ALICLOUD_ACCESS_KEY_SECRET environment variable is not set")
+	ErrMissingConfig          = errors.New("未找到阿里云凭证，请运行 cloudcode init 或设置环境变量 ALICLOUD_ACCESS_KEY_ID/ALICLOUD_ACCESS_KEY_SECRET")
 	ErrNoAvailableZone        = errors.New("no available zone with sufficient stock")
 	ErrECSWaitTimeout         = errors.New("timeout waiting for ECS instance to be running")
 	ErrResourceNotFound       = errors.New("resource not found")

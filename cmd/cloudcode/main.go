@@ -141,7 +141,7 @@ func newInitCmd() *cobra.Command {
 }
 
 func newDeployCmd() *cobra.Command {
-	var force bool
+	var appOnly bool
 
 	cmd := &cobra.Command{
 		Use:   "deploy",
@@ -177,11 +177,11 @@ func newDeployCmd() *cobra.Command {
 				Version:     version,
 			}
 
-			return d.Run(cmd.Context(), force)
+			return d.Run(cmd.Context(), appOnly)
 		},
 	}
 
-	cmd.Flags().BoolVar(&force, "force", false, "强制重新部署应用层（跳过云资源创建）")
+	cmd.Flags().BoolVar(&appOnly, "app", false, "仅重新部署应用层（跳过云资源创建）")
 
 	return cmd
 }

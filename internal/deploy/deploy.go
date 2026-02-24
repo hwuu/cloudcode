@@ -455,11 +455,20 @@ func (d *Deployer) DeployApp(ctx context.Context, state *config.State, cfg *Depl
 	}
 	d.printf("  ✓ 配置文件已上传\n")
 
+	// docker compose pull（拉镜像可能较慢，单独执行）
+	pullCmd := "cd ~/cloudcode && docker compose pull"
+	pullCtx, pullCancel := context.WithTimeout(ctx, 15*time.Minute)
+	defer pullCancel()
+	if _, err := sshClient.RunCommand(pullCtx, pullCmd); err != nil {
+		return fmt.Errorf("拉取 Docker 镜像失败: %w", err)
+	}
+	d.printf("  ✓ Docker 镜像已拉取\n")
+
 	// docker compose up
-	composeCmd := "cd ~/cloudcode && docker compose pull && docker compose up -d"
-	composeCtx, composeCancel := context.WithTimeout(ctx, remote.DockerInstallTimeout)
-	defer composeCancel()
-	if _, err := sshClient.RunCommand(composeCtx, composeCmd); err != nil {
+	upCmd := "cd ~/cloudcode && docker compose up -d"
+	upCtx, upCancel := context.WithTimeout(ctx, remote.DockerInstallTimeout)
+	defer upCancel()
+	if _, err := sshClient.RunCommand(upCtx, upCmd); err != nil {
 		return fmt.Errorf("启动 Docker Compose 失败: %w", err)
 	}
 	d.printf("  ✓ Docker Compose 已启动\n")

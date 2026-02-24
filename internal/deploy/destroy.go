@@ -79,10 +79,10 @@ func (d *Destroyer) Run(ctx context.Context, force, dryRun bool) error {
 		return nil
 	}
 
-	// 可选保留快照
+	// 可选保留快照（默认保留）
 	keepSnapshot := false
 	if !force && state.Resources.ECS.ID != "" {
-		keepSnapshot, err = d.Prompter.PromptConfirm("是否保留磁盘快照（下次 deploy 可恢复）?")
+		keepSnapshot, err = d.Prompter.PromptConfirm("是否保留磁盘快照（下次 deploy 可恢复）?", true)
 		if err != nil {
 			return err
 		}
@@ -92,7 +92,7 @@ func (d *Destroyer) Run(ctx context.Context, force, dryRun bool) error {
 	if keepSnapshot {
 		if err := d.createSnapshot(ctx, state); err != nil {
 			d.printf("  ⚠ 快照创建失败: %v\n", err)
-			continueDestroy, promptErr := d.Prompter.PromptConfirm("继续销毁（数据将丢失）?")
+			continueDestroy, promptErr := d.Prompter.PromptConfirm("继续销毁（数据将丢失）?", false)
 			if promptErr != nil {
 				return promptErr
 			}
@@ -106,7 +106,7 @@ func (d *Destroyer) Run(ctx context.Context, force, dryRun bool) error {
 
 	// 确认销毁
 	if !force {
-		confirmed, err := d.Prompter.PromptConfirm("确认删除所有资源? 此操作不可恢复!")
+		confirmed, err := d.Prompter.PromptConfirm("确认删除所有资源? 此操作不可恢复!", false)
 		if err != nil {
 			return err
 		}

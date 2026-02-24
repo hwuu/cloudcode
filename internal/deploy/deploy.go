@@ -438,10 +438,11 @@ func (d *Deployer) DeployApp(ctx context.Context, state *config.State, cfg *Depl
 	d.printf("  ✓ 配置文件已渲染\n")
 
 	// 上传文件（将 ~/cloudcode 替换为绝对路径）
-	// --app 模式跳过 authelia 配置（密码哈希和 secrets 已在磁盘上）
+	// --app 模式或快照恢复时跳过 authelia 配置（密码哈希、secrets、db 已在磁盘上）
+	skipAuthelia := cfg.Password == "" || d.SnapshotID != ""
 	uploadFiles := make(map[string][]byte)
 	for path, content := range files {
-		if cfg.Password == "" && strings.Contains(path, "authelia/") {
+		if skipAuthelia && strings.Contains(path, "authelia/") {
 			continue
 		}
 		remotePath := strings.Replace(path, "~/cloudcode", "/root/cloudcode", 1)

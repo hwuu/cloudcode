@@ -64,15 +64,18 @@ func TestPrompter_PromptWithDefault(t *testing.T) {
 
 func TestPrompter_PromptConfirm(t *testing.T) {
 	tests := []struct {
-		name     string
-		input    string
-		expected bool
+		name       string
+		input      string
+		defaultYes bool
+		expected   bool
 	}{
-		{"yes lowercase", "y\n", true},
-		{"yes uppercase", "Y\n", true},
-		{"no", "n\n", false},
-		{"empty", "\n", false},
-		{"random", "foo\n", false},
+		{"yes lowercase", "y\n", false, true},
+		{"yes uppercase", "Y\n", false, true},
+		{"no", "n\n", false, false},
+		{"empty default no", "\n", false, false},
+		{"empty default yes", "\n", true, true},
+		{"random", "foo\n", false, false},
+		{"no override default yes", "n\n", true, false},
 	}
 
 	for _, tt := range tests {
@@ -80,7 +83,7 @@ func TestPrompter_PromptConfirm(t *testing.T) {
 			output := &bytes.Buffer{}
 			prompter := config.NewPrompter(strings.NewReader(tt.input), output)
 
-			result, err := prompter.PromptConfirm("Confirm?")
+			result, err := prompter.PromptConfirm("Confirm?", tt.defaultYes)
 			if err != nil {
 				t.Fatalf("PromptConfirm failed: %v", err)
 			}

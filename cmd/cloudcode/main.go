@@ -60,7 +60,7 @@ func newInitCmd() *cobra.Command {
 			// 检查是否已有配置
 			existing, _ := config.LoadCredentials()
 			if existing != nil {
-				overwrite, err := prompter.PromptConfirm("已有凭证配置，是否覆盖?")
+				overwrite, err := prompter.PromptConfirm("已有凭证配置，是否覆盖?", false)
 				if err != nil {
 					return err
 				}
@@ -111,7 +111,7 @@ func newInitCmd() *cobra.Command {
 				if err != nil {
 					fmt.Println("✗")
 					fmt.Printf("凭证验证失败: %v\n", err)
-					retry, retryErr := prompter.PromptConfirm("重试?")
+					retry, retryErr := prompter.PromptConfirm("重试?", true)
 					if retryErr != nil {
 						return retryErr
 					}

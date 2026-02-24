@@ -63,8 +63,8 @@ func TestRenderCaddyfile(t *testing.T) {
 	if !strings.Contains(s, "reverse_proxy authelia:9091") {
 		t.Error("Caddyfile should contain authelia reverse proxy")
 	}
-	if !strings.Contains(s, "reverse_proxy opencode:4096") {
-		t.Error("Caddyfile should contain opencode reverse proxy")
+	if !strings.Contains(s, "reverse_proxy devbox:4096") {
+		t.Error("Caddyfile should contain devbox reverse proxy")
 	}
 	if !strings.Contains(s, "forward_auth") {
 		t.Error("Caddyfile should contain forward_auth")
@@ -172,10 +172,10 @@ func TestRenderDockerCompose(t *testing.T) {
 	if !strings.Contains(s, "authelia:") {
 		t.Error("docker-compose should contain authelia service")
 	}
-	if !strings.Contains(s, "opencode:") {
-		t.Error("docker-compose should contain opencode service")
+	if !strings.Contains(s, "devbox:") {
+		t.Error("docker-compose should contain devbox service")
 	}
-	if !strings.Contains(s, "ghcr.io/hwuu/cloudcode-opencode:"+data.Version) {
+	if !strings.Contains(s, "ghcr.io/hwuu/cloudcode-devbox:"+data.Version) {
 		t.Error("docker-compose should contain versioned image tag")
 	}
 }

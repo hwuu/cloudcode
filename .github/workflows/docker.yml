@@ -6,7 +6,7 @@ on:
     branches:
       - 'hwuu/**'
     paths:
-      - 'internal/template/templates/Dockerfile.opencode'
+      - 'internal/template/templates/Dockerfile.devbox'
       - '.github/workflows/docker.yml'
       - 'VERSION'
 
@@ -42,10 +42,10 @@ jobs:
       - uses: docker/build-push-action@v6
         with:
           context: .
-          file: internal/template/templates/Dockerfile.opencode
+          file: internal/template/templates/Dockerfile.devbox
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
-            ghcr.io/hwuu/cloudcode-opencode:${{ steps.version.outputs.version }}
+            ghcr.io/hwuu/cloudcode-devbox:${{ steps.version.outputs.version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

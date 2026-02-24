@@ -224,8 +224,8 @@ func newLogsCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "logs [container]",
 		Short: "查看容器日志",
-		Long:  "查看 Docker Compose 容器日志。可选指定容器名（authelia/caddy/opencode）。",
-		ValidArgs: []string{"authelia", "caddy", "opencode"},
+		Long:  "查看 Docker Compose 容器日志。可选指定容器名（authelia/caddy/devbox）。",
+		ValidArgs: []string{"authelia", "caddy", "devbox"},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			composeCmd := "cd ~/cloudcode && docker compose logs"
 			if tail > 0 {
@@ -279,10 +279,10 @@ func newSSHCmd() *cobra.Command {
 
 target 可选值：
   host       登录 ECS 宿主机（默认）
-  opencode   进入 opencode 容器
+  devbox     进入 devbox 容器
   authelia   进入 authelia 容器
   caddy      进入 caddy 容器`,
-		ValidArgs: []string{"host", "opencode", "authelia", "caddy"},
+		ValidArgs: []string{"host", "devbox", "authelia", "caddy"},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			state, _, err := loadStateAndKey("")
 			if err != nil {
@@ -322,9 +322,9 @@ func newExecCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "exec <container> <command> [args...]",
 		Short: "在容器内执行命令",
-		Long:  "在指定容器内执行命令。例如: cloudcode exec opencode opencode --version",
+		Long:  "在指定容器内执行命令。例如: cloudcode exec devbox opencode --version",
 		Args:  cobra.MinimumNArgs(2),
-		ValidArgs: []string{"authelia", "caddy", "opencode"},
+		ValidArgs: []string{"authelia", "caddy", "devbox"},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			container := args[0]
 			containerCmd := strings.Join(args[1:], " ")

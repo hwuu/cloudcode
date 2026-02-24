@@ -81,11 +81,11 @@ cloudcode otc                          # 读取 Authelia 一次性验证码（�
 cloudcode logs                         # 查看所有容器日志（默认最后 50 行）
 cloudcode logs authelia                # 查看指定容器日志
 cloudcode logs -f                      # 实时跟踪日志
-cloudcode logs -n 100 opencode         # 查看最后 100 行
+cloudcode logs -n 100 devbox             # 查看最后 100 行
 cloudcode ssh                          # SSH 登录到 ECS 宿主机
-cloudcode ssh opencode                 # 进入 opencode 容器
+cloudcode ssh devbox                   # 进入 devbox 容器
 cloudcode ssh authelia                 # 进入 authelia 容器
-cloudcode exec opencode opencode -v    # 在容器内执行命令
+cloudcode exec devbox opencode -v      # 在容器内执行命令
 ```
 
 ### 销毁资源

@@ -163,6 +163,7 @@ func newDeployCmd() *cobra.Command {
 				ECS:      clients.ECS,
 				VPC:      clients.VPC,
 				STS:      clients.STS,
+				DNS:      clients.DNS,
 				Prompter: prompter,
 				Output:   os.Stdout,
 				Region:   cfg.RegionID,

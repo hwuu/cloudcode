@@ -52,6 +52,7 @@ type Deployer struct {
 	ECS              alicloud.ECSAPI
 	VPC              alicloud.VPCAPI
 	STS              alicloud.STSAPI
+	DNS              alicloud.DnsAPI
 	Prompter         *config.Prompter
 	Output           io.Writer
 	Region           string
@@ -62,6 +63,7 @@ type Deployer struct {
 	WaitInterval     time.Duration // ECS 等待轮询间隔（测试用，默认 5s）
 	WaitTimeout      time.Duration // ECS 等待超时（测试用，默认 5min）
 	Version          string        // Docker 镜像版本号
+	DNSWaitTimeout   time.Duration // DNS 生效等待超时（默认 5min）
 }
 
 func (d *Deployer) printf(format string, args ...interface{}) {
@@ -282,6 +284,68 @@ func (d *Deployer) CreateResources(ctx context.Context, state *config.State, ssh
 	return nil
 }
 
+// SetupDNS 配置自有域名的 DNS 记录
+func (d *Deployer) SetupDNS(ctx context.Context, domain, eip string) error {
+	d.printf("\n  配置 DNS:\n")
+
+	if d.DNS == nil {
+		// 无 DNS 客户端，提示手动配置
+		return d.manualDNS(domain, eip)
+	}
+
+	// 查询阿里云 DNS 域名列表
+	domains, err := alicloud.ListDomains(d.DNS)
+	if err != nil {
+		d.printf("  ⚠ 查询阿里云 DNS 失败: %v\n", err)
+		return d.manualDNS(domain, eip)
+	}
+
+	baseDomain, rr, err := alicloud.FindBaseDomain(domain, domains)
+	if err != nil {
+		// 域名不在阿里云 DNS，提示手动配置
+		d.printf("  域名 %s 不在阿里云 DNS 中\n", domain)
+		return d.manualDNS(domain, eip)
+	}
+
+	// 自动更新 A 记录：主域名 + auth 子域名
+	d.printf("  自动更新 DNS 记录 (%s)...\n", baseDomain)
+
+	if err := alicloud.EnsureDNSRecord(d.DNS, baseDomain, rr, eip); err != nil {
+		return fmt.Errorf("DNS 记录更新失败: %w", err)
+	}
+	d.printf("  ✓ %s → %s\n", domain, eip)
+
+	authRR := "auth." + rr
+	if err := alicloud.EnsureDNSRecord(d.DNS, baseDomain, authRR, eip); err != nil {
+		return fmt.Errorf("DNS 记录更新失败: %w", err)
+	}
+	d.printf("  ✓ auth.%s → %s\n", domain, eip)
+
+	return nil
+}
+
+// manualDNS 提示用户手动配置 DNS 并等待生效
+func (d *Deployer) manualDNS(domain, eip string) error {
+	d.printf("  请手动配置 DNS A 记录:\n")
+	d.printf("    %s  →  %s\n", domain, eip)
+	d.printf("    auth.%s  →  %s\n", domain, eip)
+	d.printf("  等待 DNS 生效...\n")
+
+	timeout := d.DNSWaitTimeout
+	if timeout == 0 {
+		timeout = 5 * time.Minute
+	}
+
+	if err := waitForDNS(domain, eip, timeout, d.printf); err != nil {
+		return err
+	}
+	if err := waitForDNS("auth."+domain, eip, timeout, d.printf); err != nil {
+		return err
+	}
+	d.printf("  ✓ DNS 已生效\n")
+	return nil
+}
+
 // DeployApp 部署应用（SSH → Docker → 模板 → 上传 → compose up）
 func (d *Deployer) DeployApp(ctx context.Context, state *config.State, cfg *DeployConfig) error {
 	d.printf("\n[4/5] 部署应用:\n")
@@ -477,6 +541,13 @@ func (d *Deployer) Run(ctx context.Context, force bool) error {
 	// 填充 nip.io 域名
 	if cfg.Domain == "" {
 		cfg.Domain = state.Resources.EIP.IP + ".nip.io"
+	}
+
+	// DNS 配置（自有域名时）
+	if cfg.Domain != "" && !strings.HasSuffix(cfg.Domain, ".nip.io") {
+		if err := d.SetupDNS(ctx, cfg.Domain, state.Resources.EIP.IP); err != nil {
+			return err
+		}
 	}
 
 	// 更新 state

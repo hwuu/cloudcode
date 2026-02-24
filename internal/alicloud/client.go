@@ -5,7 +5,8 @@ package alicloud
 import (
 	"os"
 
-	"github.com/alibabacloud-go/darabonba-openapi/v2/client"
+	dnsclient "github.com/alibabacloud-go/alidns-20150109/v4/client"
+	openapi "github.com/alibabacloud-go/darabonba-openapi/v2/client"
 	ecsclient "github.com/alibabacloud-go/ecs-20140526/v4/client"
 	stsclient "github.com/alibabacloud-go/sts-20150401/v2/client"
 	vpcclient "github.com/alibabacloud-go/vpc-20160428/v6/client"
@@ -98,11 +99,12 @@ type Clients struct {
 	ECS *ecsclient.Client
 	VPC *vpcclient.Client
 	STS *stsclient.Client
+	DNS *dnsclient.Client
 }
 
-// NewClients 使用统一配置初始化 ECS/VPC/STS 三个 SDK 客户端
+// NewClients 使用统一配置初始化 ECS/VPC/STS/DNS 四个 SDK 客户端
 func NewClients(cfg *Config) (*Clients, error) {
-	openAPIConfig := &client.Config{
+	openAPIConfig := &openapi.Config{
 		AccessKeyId:     &cfg.AccessKeyID,
 		AccessKeySecret: &cfg.AccessKeySecret,
 		RegionId:        &cfg.RegionID,
@@ -123,10 +125,16 @@ func NewClients(cfg *Config) (*Clients, error) {
 		return nil, err
 	}
 
+	dnsCli, err := dnsclient.NewClient(openAPIConfig)
+	if err != nil {
+		return nil, err
+	}
+
 	return &Clients{
 		ECS: ecsCli,
 		VPC: vpcCli,
 		STS: stsCli,
+		DNS: dnsCli,
 	}, nil
 }
 

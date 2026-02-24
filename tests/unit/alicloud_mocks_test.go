@@ -1,6 +1,7 @@
 package unit
 
 import (
+	dnsclient "github.com/alibabacloud-go/alidns-20150109/v4/client"
 	ecsclient "github.com/alibabacloud-go/ecs-20140526/v4/client"
 	stsclient "github.com/alibabacloud-go/sts-20150401/v2/client"
 	vpcclient "github.com/alibabacloud-go/vpc-20160428/v6/client"
@@ -181,4 +182,27 @@ func (m *MockECSAPI) AuthorizeSecurityGroup(req *ecsclient.AuthorizeSecurityGrou
 		return &ecsclient.AuthorizeSecurityGroupResponse{}, nil
 	}
 	return m.AuthorizeSecurityGroupFunc(req)
+}
+
+type MockDnsAPI struct {
+	DescribeDomainsFunc       func(req *dnsclient.DescribeDomainsRequest) (*dnsclient.DescribeDomainsResponse, error)
+	DescribeDomainRecordsFunc func(req *dnsclient.DescribeDomainRecordsRequest) (*dnsclient.DescribeDomainRecordsResponse, error)
+	AddDomainRecordFunc       func(req *dnsclient.AddDomainRecordRequest) (*dnsclient.AddDomainRecordResponse, error)
+	UpdateDomainRecordFunc    func(req *dnsclient.UpdateDomainRecordRequest) (*dnsclient.UpdateDomainRecordResponse, error)
+}
+
+func (m *MockDnsAPI) DescribeDomains(req *dnsclient.DescribeDomainsRequest) (*dnsclient.DescribeDomainsResponse, error) {
+	return m.DescribeDomainsFunc(req)
+}
+
+func (m *MockDnsAPI) DescribeDomainRecords(req *dnsclient.DescribeDomainRecordsRequest) (*dnsclient.DescribeDomainRecordsResponse, error) {
+	return m.DescribeDomainRecordsFunc(req)
+}
+
+func (m *MockDnsAPI) AddDomainRecord(req *dnsclient.AddDomainRecordRequest) (*dnsclient.AddDomainRecordResponse, error) {
+	return m.AddDomainRecordFunc(req)
+}
+
+func (m *MockDnsAPI) UpdateDomainRecord(req *dnsclient.UpdateDomainRecordRequest) (*dnsclient.UpdateDomainRecordResponse, error) {
+	return m.UpdateDomainRecordFunc(req)
 }

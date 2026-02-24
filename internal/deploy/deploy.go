@@ -601,18 +601,16 @@ func (d *Deployer) Run(ctx context.Context, appOnly bool) error {
 	}
 
 	// 从快照恢复
+	var backupCfg *config.Backup
 	if state.Status == "destroyed" {
 		dir := d.getStateDir()
-		backup, _ := config.LoadBackupFrom(dir)
-		if backup != nil && backup.SnapshotID != "" {
-			d.printf("\n检测到快照 (%s)，将从快照恢复部署。\n", backup.SnapshotID)
-			d.SnapshotID = backup.SnapshotID
-			// 重置资源（destroyed 状态下资源已删除）
-			state = config.NewState(d.Region, alicloud.DefaultImageID)
-		} else {
-			// destroyed 但无快照，全新部署
-			state = config.NewState(d.Region, alicloud.DefaultImageID)
+		backupCfg, _ = config.LoadBackupFrom(dir)
+		if backupCfg != nil && backupCfg.SnapshotID != "" {
+			d.printf("\n检测到快照 (%s)，将从快照恢复部署。\n", backupCfg.SnapshotID)
+			d.SnapshotID = backupCfg.SnapshotID
 		}
+		// 重置资源（destroyed 状态下资源已删除）
+		state = config.NewState(d.Region, alicloud.DefaultImageID)
 	}
 
 	if state.IsComplete() {
@@ -621,9 +619,23 @@ func (d *Deployer) Run(ctx context.Context, appOnly bool) error {
 	}
 
 	// 阶段 2: 交互配置
-	cfg, err := d.PromptConfig(ctx)
-	if err != nil {
-		return err
+	var cfg *DeployConfig
+	if backupCfg != nil && backupCfg.Domain != "" {
+		// 快照恢复：复用 backup 中的域名和用户名，不需要输入密码
+		d.printf("\n[2/5] 使用快照配置:\n")
+		d.printf("  域名: %s\n", backupCfg.Domain)
+		d.printf("  用户名: %s\n", backupCfg.Username)
+		cfg = &DeployConfig{
+			Domain:   backupCfg.Domain,
+			Username: backupCfg.Username,
+			Email:    backupCfg.Username + "@localhost",
+		}
+	} else {
+		var err error
+		cfg, err = d.PromptConfig(ctx)
+		if err != nil {
+			return err
+		}
 	}
 
 	// 阶段 3: 创建云资源

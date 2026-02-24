@@ -326,6 +326,12 @@ func loadStateAndKey(stateDir string) (*config.State, []byte, error) {
 	if err != nil {
 		return nil, nil, fmt.Errorf("未找到部署记录，请先运行 cloudcode deploy")
 	}
+	if state.Status == "suspended" {
+		return nil, nil, fmt.Errorf("实例已停机，请先运行 cloudcode resume")
+	}
+	if state.Status == "destroyed" {
+		return nil, nil, fmt.Errorf("实例已销毁，请先运行 cloudcode deploy")
+	}
 	if state.Resources.EIP.IP == "" {
 		return nil, nil, fmt.Errorf("EIP 未分配，请先完成部署")
 	}

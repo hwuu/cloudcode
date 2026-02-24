@@ -69,7 +69,13 @@ func (s *StatusRunner) Run(ctx context.Context) error {
 	}
 
 	// 容器状态（通过 SSH）
-	if state.Resources.EIP.IP != "" && state.Resources.SSHKeyPair.Name != "" && s.SSHDialFunc != nil {
+	if state.Status == "suspended" {
+		s.printf("\n状态: 已停机 (suspended)\n")
+		s.printf("  恢复运行: cloudcode resume\n")
+	} else if state.Status == "destroyed" {
+		s.printf("\n状态: 已销毁 (destroyed)\n")
+		s.printf("  重新部署: cloudcode deploy\n")
+	} else if state.Resources.EIP.IP != "" && state.Resources.SSHKeyPair.Name != "" && s.SSHDialFunc != nil {
 		s.printf("\n容器状态:\n")
 		if err := s.checkContainers(ctx, state); err != nil {
 			s.printf("  ⚠ 无法获取容器状态: %v\n", err)

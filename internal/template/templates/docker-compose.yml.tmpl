@@ -13,7 +13,7 @@ services:
       - caddy_config:/config
     depends_on:
       - authelia
-      - opencode
+      - devbox
     networks:
       - cloudcode-net
 
@@ -30,14 +30,14 @@ services:
     networks:
       - cloudcode-net
 
-  opencode:
-    image: ghcr.io/hwuu/cloudcode-opencode:{{ .Version }}
-    container_name: opencode
+  devbox:
+    image: ghcr.io/hwuu/cloudcode-devbox:{{ .Version }}
+    container_name: devbox
     restart: unless-stopped
     volumes:
-      - opencode_workspace:/home/opencode/workspace
-      - opencode_config:/home/opencode/.config/opencode
-      - opencode_data:/home/opencode/.local/share/opencode
+      - devbox_workspace:/home/opencode/workspace
+      - devbox_config:/home/opencode/.config/opencode
+      - devbox_data:/home/opencode/.local/share/opencode
     env_file:
       - .env
     expose:
@@ -48,9 +48,9 @@ services:
 volumes:
   caddy_data:
   caddy_config:
-  opencode_workspace:
-  opencode_config:
-  opencode_data:
+  devbox_workspace:
+  devbox_config:
+  devbox_data:
 
 networks:
   cloudcode-net:

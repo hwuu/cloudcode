@@ -580,24 +580,29 @@ waitForDNS(cfg.Domain, eip, 5*time.Minute)
 +-----------+----------+
 | Confirm suspend?     |
 | [y/N]                |
-+-----------+----------+
-            |
-            v
-+-----------+----------+
-| StopInstance         |
-| (StopCharging mode)  |
-+-----------+----------+
-            |
-            v
-+-----------+----------+
-| Wait for Stopped     |
-+-----------+----------+
-            |
-            v
-+-----------+----------+
-| Update state.json    |
-| (status: suspended)  |
-+----------------------+
++----+----------+------+
+    yes         no
+     |           |
+     v           v
++----+--------+ +----+--------+
+| StopInstance | | Abort       |
+| (StopCharging| | (exit)      |
+|  mode)       | +-------------+
++----+--------+
+     |
+     v
++----+----------+
+| Wait for       |
+| Stopped        |
++----+----------+
+     |
+     v
++----+----------+
+| Update         |
+| state.json     |
+| (status:       |
+|  suspended)    |
++---------------+
 ```
 
 实现极简：一个 `StopInstance` API 调用，设置 `StoppedMode: StopCharging`。停机后 CPU/内存释放不收费，仅收磁盘费 ~$1.2/月。
@@ -615,34 +620,39 @@ waitForDNS(cfg.Domain, eip, 5*time.Minute)
 +-----------+----------+
 | Confirm resume?      |
 | [y/N]                |
-+-----------+----------+
-            |
-            v
-+-----------+----------+
-| StartInstance        |
-+-----------+----------+
-            |
-            v
-+-----------+----------+
-| Wait for Running     |
-+-----------+----------+
-            |
-            v
-+-----------+----------+
-| SSH connect          |
-+-----------+----------+
-            |
-            v
-+-----------+----------+
-| Health check         |
-| (docker compose ps)  |
-+-----------+----------+
-            |
-            v
-+-----------+----------+
-| Update state.json    |
-| (status: running)    |
-+----------------------+
++----+----------+------+
+    yes         no
+     |           |
+     v           v
++----+--------+ +----+--------+
+| StartInstance| | Abort       |
++----+--------+ | (exit)      |
+     |          +-------------+
+     v
++----+----------+
+| Wait for       |
+| Running        |
++----+----------+
+     |
+     v
++----+----------+
+| SSH connect    |
++----+----------+
+     |
+     v
++----+----------+
+| Health check   |
+| (docker compose|
+|  ps)           |
++----+----------+
+     |
+     v
++----+----------+
+| Update         |
+| state.json     |
+| (status:       |
+|  running)      |
++---------------+
 ```
 
 `StartInstance` 后几秒恢复，Docker 容器随 `restart: unless-stopped` 自动启动。resume 流程需重新建立 SSH 连接（suspend 时连接断开），然后通过 SSH 执行 `docker compose ps` 检查容器健康状态。
@@ -987,6 +997,7 @@ v0.2.0 对月费用的影响：
 
 ## 变更记录
 
+- v1.12 (2026-02-24): suspend/resume 流程图补充取消分支，与 destroy 流程图保持一致
 - v1.11 (2026-02-24): CC+OC 第三轮 review — 修复 handle_path 与 ttyd --base-path 冲突（改用 handle 保留路径前缀）；架构图统一容器名为 devbox 并简化去重；credentials 解析明确只取第一个 = 分割；4.2 依赖图重画；3.4.3 标题更新覆盖 running 状态；1.3 非目标补充"不支持配置热更新"；补充 handle vs handle_path 说明
 - v1.10 (2026-02-24): CC+OC 第二轮 review — 1.2 目标表补充 init；deploy 补充 status:running 检查；Caddyfile 补充 auth 子域名 8443 端口；init 验证失败改为循环重试；destroy 流程图补充取消退出分支；修正依赖关系（rename 不依赖 init）；credentials 格式去掉等号周围空格；补充格式错误测试要点
 - v1.9 (2026-02-24): CC+OC 联合 review — suspend/resume 补充交互确认；destroy 流程图体现两次确认；deploy 检测 suspended 改为报错提示 resume；3.3.1 补充两条 A 记录说明；3.3.5 改用完整域名示例；EnsureDNSRecord 注释明确为单条操作；2.5 新增版本定义（大版本/小版本）；Caddyfile 补充 8443 备用端口；3.3.7 补充 Authelia 配置模板；新增 3.5 cloudcode init 统一配置管理

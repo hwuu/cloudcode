@@ -14,7 +14,7 @@ auth.{{ .Domain }}:8443 {
         copy_headers Remote-User Remote-Groups Remote-Name Remote-Email
     }
 
-    reverse_proxy opencode:4096
+    reverse_proxy devbox:4096
 
     log {
         output stdout
@@ -28,7 +28,7 @@ auth.{{ .Domain }}:8443 {
         copy_headers Remote-User Remote-Groups Remote-Name Remote-Email
     }
 
-    reverse_proxy opencode:4096
+    reverse_proxy devbox:4096
 
     log {
         output stdout

@@ -97,7 +97,7 @@ func TestStatus_WithContainers(t *testing.T) {
 			return func() (remote.SSHClient, error) {
 				return &MockSSHClient{
 					RunCommandFunc: func(ctx context.Context, cmd string) (string, error) {
-						return "caddy running\nauthelia running\nopencode running\n", nil
+						return "caddy running\nauthelia running\ndevbox running\n", nil
 					},
 				}, nil
 			}

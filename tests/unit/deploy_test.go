@@ -271,7 +271,7 @@ func newTestDeployer(stateDir string, promptInput string) *deploy.Deployer {
 				return &MockSSHClient{
 					RunCommandFunc: func(ctx context.Context, cmd string) (string, error) {
 						if strings.Contains(cmd, "docker compose ps") {
-							return "caddy running\nauthelia running\nopencode running\n", nil
+							return "caddy running\nauthelia running\ndevbox running\n", nil
 						}
 						return "", nil
 					},

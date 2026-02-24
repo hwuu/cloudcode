@@ -34,6 +34,7 @@ services:
     image: ghcr.io/hwuu/cloudcode-devbox:{{ .Version }}
     container_name: devbox
     restart: unless-stopped
+    init: true
     volumes:
       - devbox_workspace:/home/opencode/workspace
       - devbox_config:/home/opencode/.config/opencode
@@ -42,6 +43,7 @@ services:
       - .env
     expose:
       - 4096
+      - 7681
     networks:
       - cloudcode-net
 

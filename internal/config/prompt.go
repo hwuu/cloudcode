@@ -98,13 +98,21 @@ func (p *Prompter) PromptPassword(message string) (string, error) {
 	return strings.TrimSpace(p.scanner.Text()), nil
 }
 
-// PromptConfirm 确认提示，返回用户是否输入了 y
-func (p *Prompter) PromptConfirm(message string) (bool, error) {
-	result, err := p.Prompt(fmt.Sprintf("%s [y/N]: ", message))
-	if err != nil {
-		return false, err
+// PromptConfirm 确认提示。defaultYes=true 时默认 yes [Y/n]，否则默认 no [y/N]
+func (p *Prompter) PromptConfirm(message string, defaultYes bool) (bool, error) {
+	hint := "[y/N]"
+	if defaultYes {
+		hint = "[Y/n]"
 	}
-	return strings.ToLower(result) == "y", nil
+	result, err := p.Prompt(fmt.Sprintf("%s %s: ", message, hint))
+	if err != nil {
+		return defaultYes, err
+	}
+	result = strings.ToLower(strings.TrimSpace(result))
+	if result == "" {
+		return defaultYes, nil
+	}
+	return result == "y", nil
 }
 
 // PromptSelect 显示选项列表，返回用户选择的索引（0-based）

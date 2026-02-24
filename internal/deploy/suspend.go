@@ -59,7 +59,7 @@ func (s *Suspender) Run(ctx context.Context) error {
 		return fmt.Errorf("未找到 ECS 实例")
 	}
 
-	confirmed, err := s.Prompter.PromptConfirm("确认停机? 停机后仅收磁盘费 (~$1.2/月)")
+	confirmed, err := s.Prompter.PromptConfirm("确认停机? 停机后仅收磁盘费 (~$1.2/月)", true)
 	if err != nil {
 		return err
 	}

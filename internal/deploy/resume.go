@@ -65,7 +65,7 @@ func (r *Resumer) Run(ctx context.Context) error {
 		return fmt.Errorf("未找到 ECS 实例")
 	}
 
-	confirmed, err := r.Prompter.PromptConfirm("确认恢复运行?")
+	confirmed, err := r.Prompter.PromptConfirm("确认恢复运行?", true)
 	if err != nil {
 		return err
 	}

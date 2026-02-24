@@ -192,7 +192,9 @@ CloudCode 使用语义化版本号 `MAJOR.MINOR.PATCH`（如 `0.2.1`）：
   "cloudcode_version": "0.2.0",
   "created_at": "2026-02-22T10:00:00Z",
   "region": "ap-southeast-1",
-  "disk_size": 60
+  "disk_size": 60,
+  "domain": "oc.example.com",
+  "username": "admin"
 }
 ```
 

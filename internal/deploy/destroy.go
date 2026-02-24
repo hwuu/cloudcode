@@ -1,6 +1,7 @@
 package deploy
 
 // destroy.go 按序销毁所有云资源，支持 --force（跳过确认）和 --dry-run（仅预览）。
+// 可选保留磁盘快照，下次 deploy 可从快照恢复。
 // 删除顺序：解绑EIP → 释放EIP → 删除ECS → 删除SSH密钥对 → 删除安全组 → 删除VSwitch → 删除VPC。
 // 每步删除成功后立即更新 state，支持中断后重新执行（跳过已删除的资源）。
 // 单个资源删除失败不阻塞后续删除，最后汇总输出失败资源。
@@ -19,12 +20,15 @@ import (
 
 // Destroyer 资源销毁器
 type Destroyer struct {
-	ECS      alicloud.ECSAPI
-	VPC      alicloud.VPCAPI
-	Prompter *config.Prompter
-	Output   io.Writer
-	Region   string
-	StateDir string
+	ECS          alicloud.ECSAPI
+	VPC          alicloud.VPCAPI
+	Prompter     *config.Prompter
+	Output       io.Writer
+	Region       string
+	StateDir     string
+	Version      string        // CloudCode 版本号（写入 backup.json）
+	WaitInterval time.Duration // 快照等待轮询间隔（测试用）
+	WaitTimeout  time.Duration // 快照等待超时（测试用）
 }
 
 func (d *Destroyer) printf(format string, args ...interface{}) {
@@ -75,7 +79,32 @@ func (d *Destroyer) Run(ctx context.Context, force, dryRun bool) error {
 		return nil
 	}
 
-	// 确认
+	// 可选保留快照
+	keepSnapshot := false
+	if !force && state.Resources.ECS.ID != "" {
+		keepSnapshot, err = d.Prompter.PromptConfirm("是否保留磁盘快照（下次 deploy 可恢复）?")
+		if err != nil {
+			return err
+		}
+	}
+
+	// 创建快照
+	if keepSnapshot {
+		if err := d.createSnapshot(ctx, state); err != nil {
+			d.printf("  ⚠ 快照创建失败: %v\n", err)
+			continueDestroy, promptErr := d.Prompter.PromptConfirm("继续销毁（数据将丢失）?")
+			if promptErr != nil {
+				return promptErr
+			}
+			if !continueDestroy {
+				d.printf("已取消。\n")
+				return nil
+			}
+			keepSnapshot = false
+		}
+	}
+
+	// 确认销毁
 	if !force {
 		confirmed, err := d.Prompter.PromptConfirm("确认删除所有资源? 此操作不可恢复!")
 		if err != nil {
@@ -187,9 +216,15 @@ func (d *Destroyer) Run(ctx context.Context, force, dryRun bool) error {
 	keyPath := filepath.Join(d.getStateDir(), "ssh_key")
 	_ = os.Remove(keyPath)
 
-	// 9. 删除 state 文件
-	if err := d.deleteState(); err != nil {
-		d.printf("  ⚠ 删除 state 文件失败: %v\n", err)
+	// 9. 处理 state 和 backup
+	if keepSnapshot {
+		// 保留快照：state 标记为 destroyed
+		state.Status = "destroyed"
+		_ = d.saveState(state)
+	} else {
+		// 不保留快照：删除 state 和 backup
+		_ = d.deleteState()
+		_ = d.deleteBackup()
 	}
 
 	if len(failedResources) > 0 {
@@ -201,7 +236,67 @@ func (d *Destroyer) Run(ctx context.Context, force, dryRun bool) error {
 	}
 
 	d.printf("\n✅ 所有资源已清理完毕。\n")
+	if keepSnapshot {
+		d.printf("  快照已保留，下次 cloudcode deploy 可从快照恢复。\n")
+	}
 	return nil
+}
+
+// createSnapshot 停机 → 获取系统盘 → 创建快照 → 等待完成 → 保存 backup.json
+func (d *Destroyer) createSnapshot(ctx context.Context, state *config.State) error {
+	instanceID := state.Resources.ECS.ID
+
+	// 停机（确保数据一致性）
+	d.printf("  停机中（确保数据一致性）...\n")
+	if err := alicloud.StopECSInstance(d.ECS, instanceID, false); err != nil {
+		return fmt.Errorf("停机失败: %w", err)
+	}
+	if err := alicloud.WaitForInstanceStatus(ctx, d.ECS, instanceID, d.Region, "Stopped", d.WaitInterval, d.WaitTimeout); err != nil {
+		return fmt.Errorf("等待停机失败: %w", err)
+	}
+	d.printf("  ✓ 已停机\n")
+
+	// 获取系统盘 ID
+	diskID, err := alicloud.GetSystemDiskID(d.ECS, instanceID, d.Region)
+	if err != nil {
+		return err
+	}
+
+	// 创建快照
+	d.printf("  创建快照...\n")
+	snapshotName := fmt.Sprintf("cloudcode-%s", time.Now().UTC().Format("20060102-150405"))
+	snapshotID, err := alicloud.CreateDiskSnapshot(d.ECS, diskID, snapshotName)
+	if err != nil {
+		return err
+	}
+
+	// 等待快照完成
+	if err := alicloud.WaitForSnapshotReady(ctx, d.ECS, snapshotID, d.Region, d.WaitInterval, d.WaitTimeout); err != nil {
+		return err
+	}
+	d.printf("  ✓ 快照已创建 (%s)\n", snapshotID)
+
+	// 删除旧快照（只保留最新一份）
+	dir := d.getStateDir()
+	oldBackup, _ := config.LoadBackupFrom(dir)
+	if oldBackup != nil && oldBackup.SnapshotID != "" && oldBackup.SnapshotID != snapshotID {
+		_ = alicloud.DeleteSnapshot(d.ECS, oldBackup.SnapshotID)
+	}
+
+	// 保存 backup.json
+	backup := &config.Backup{
+		CloudCodeVersion: d.Version,
+		SnapshotID:       snapshotID,
+		CreatedAt:        time.Now().UTC().Format(time.RFC3339),
+		Region:           d.Region,
+		DiskSize:         state.Resources.ECS.SystemDiskSize,
+		Domain:           state.CloudCode.Domain,
+		Username:         state.CloudCode.Username,
+	}
+	if d.StateDir != "" {
+		return config.SaveBackupTo(d.StateDir, backup)
+	}
+	return config.SaveBackup(backup)
 }
 
 func (d *Destroyer) printIfSet(name, id string) {
@@ -214,4 +309,11 @@ func (d *Destroyer) deleteState() error {
 	dir := d.getStateDir()
 	path := filepath.Join(dir, config.StateFileName)
 	return os.Remove(path)
+}
+
+func (d *Destroyer) deleteBackup() error {
+	if d.StateDir != "" {
+		return config.DeleteBackupFrom(d.StateDir)
+	}
+	return config.DeleteBackup()
 }

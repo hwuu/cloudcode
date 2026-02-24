@@ -28,15 +28,17 @@ const (
 
 // Prompter 封装 CLI 交互式输入，通过 reader/writer 抽象支持 mock 测试
 type Prompter struct {
-	reader io.Reader
-	writer io.Writer
+	reader  io.Reader
+	writer  io.Writer
+	scanner *bufio.Scanner
 }
 
 // NewPrompter 创建 Prompter（指定输入输出流）
 func NewPrompter(reader io.Reader, writer io.Writer) *Prompter {
 	return &Prompter{
-		reader: reader,
-		writer: writer,
+		reader:  reader,
+		writer:  writer,
+		scanner: bufio.NewScanner(reader),
 	}
 }
 
@@ -51,11 +53,13 @@ func NewDefaultPrompter() *Prompter {
 // Prompt 显示提示信息并读取一行输入
 func (p *Prompter) Prompt(message string) (string, error) {
 	fmt.Fprint(p.writer, message)
-	scanner := bufio.NewScanner(p.reader)
-	if !scanner.Scan() {
-		return "", scanner.Err()
+	if !p.scanner.Scan() {
+		if err := p.scanner.Err(); err != nil {
+			return "", err
+		}
+		return "", nil
 	}
-	return strings.TrimSpace(scanner.Text()), nil
+	return strings.TrimSpace(p.scanner.Text()), nil
 }
 
 // PromptWithDefault 带默认值的输入提示，用户直接回车则使用默认值
@@ -85,11 +89,13 @@ func (p *Prompter) PromptPassword(message string) (string, error) {
 		return string(password), nil
 	}
 
-	scanner := bufio.NewScanner(p.reader)
-	if !scanner.Scan() {
-		return "", scanner.Err()
+	if !p.scanner.Scan() {
+		if err := p.scanner.Err(); err != nil {
+			return "", err
+		}
+		return "", nil
 	}
-	return strings.TrimSpace(scanner.Text()), nil
+	return strings.TrimSpace(p.scanner.Text()), nil
 }
 
 // PromptConfirm 确认提示，返回用户是否输入了 y

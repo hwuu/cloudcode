@@ -172,6 +172,34 @@ func (m *deployMockECS) AuthorizeSecurityGroup(req *ecsclient.AuthorizeSecurityG
 	return &ecsclient.AuthorizeSecurityGroupResponse{}, nil
 }
 
+func (m *deployMockECS) DescribeDisks(req *ecsclient.DescribeDisksRequest) (*ecsclient.DescribeDisksResponse, error) {
+	return &ecsclient.DescribeDisksResponse{}, nil
+}
+
+func (m *deployMockECS) CreateSnapshot(req *ecsclient.CreateSnapshotRequest) (*ecsclient.CreateSnapshotResponse, error) {
+	return &ecsclient.CreateSnapshotResponse{}, nil
+}
+
+func (m *deployMockECS) DescribeSnapshots(req *ecsclient.DescribeSnapshotsRequest) (*ecsclient.DescribeSnapshotsResponse, error) {
+	return &ecsclient.DescribeSnapshotsResponse{}, nil
+}
+
+func (m *deployMockECS) DeleteSnapshot(req *ecsclient.DeleteSnapshotRequest) (*ecsclient.DeleteSnapshotResponse, error) {
+	return &ecsclient.DeleteSnapshotResponse{}, nil
+}
+
+func (m *deployMockECS) CreateImage(req *ecsclient.CreateImageRequest) (*ecsclient.CreateImageResponse, error) {
+	return &ecsclient.CreateImageResponse{}, nil
+}
+
+func (m *deployMockECS) DescribeImages(req *ecsclient.DescribeImagesRequest) (*ecsclient.DescribeImagesResponse, error) {
+	return &ecsclient.DescribeImagesResponse{}, nil
+}
+
+func (m *deployMockECS) DeleteImage(req *ecsclient.DeleteImageRequest) (*ecsclient.DeleteImageResponse, error) {
+	return &ecsclient.DeleteImageResponse{}, nil
+}
+
 type deployMockVPC struct{}
 
 func (m *deployMockVPC) CreateVpc(req *vpcclient.CreateVpcRequest) (*vpcclient.CreateVpcResponse, error) {

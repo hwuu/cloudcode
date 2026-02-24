@@ -34,6 +34,7 @@ func newRootCmd() *cobra.Command {
 		Long:  "CloudCode — 一键部署 OpenCode 到阿里云 ECS，带 HTTPS + Authelia 两步认证。",
 	}
 
+	rootCmd.AddCommand(newInitCmd())
 	rootCmd.AddCommand(newDeployCmd())
 	rootCmd.AddCommand(newStatusCmd())
 	rootCmd.AddCommand(newDestroyCmd())
@@ -46,6 +47,97 @@ func newRootCmd() *cobra.Command {
 	return rootCmd
 }
 
+func newInitCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "init",
+		Short: "配置阿里云凭证",
+		Long:  "交互式配置阿里云 AccessKey 和区域，保存到 ~/.cloudcode/credentials。",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			prompter := config.NewPrompter(os.Stdin, os.Stdout)
+
+			// 检查是否已有配置
+			existing, _ := config.LoadCredentials()
+			if existing != nil {
+				overwrite, err := prompter.PromptConfirm("已有凭证配置，是否覆盖?")
+				if err != nil {
+					return err
+				}
+				if !overwrite {
+					fmt.Println("已取消。")
+					return nil
+				}
+			}
+
+			for {
+				accessKeyID, err := prompter.Prompt("阿里云 Access Key ID: ")
+				if err != nil {
+					return err
+				}
+				if accessKeyID == "" {
+					fmt.Println("Access Key ID 不能为空")
+					continue
+				}
+
+				accessKeySecret, err := prompter.PromptPassword("阿里云 Access Key Secret: ")
+				if err != nil {
+					return err
+				}
+				if accessKeySecret == "" {
+					fmt.Println("Access Key Secret 不能为空")
+					continue
+				}
+
+				region, err := prompter.PromptWithDefault("默认区域", alicloud.DefaultRegion)
+				if err != nil {
+					return err
+				}
+
+				// 验证凭证
+				fmt.Print("验证凭证... ")
+				cfg := &alicloud.Config{
+					AccessKeyID:     accessKeyID,
+					AccessKeySecret: accessKeySecret,
+					RegionID:        region,
+				}
+				clients, err := alicloud.NewClients(cfg)
+				if err != nil {
+					fmt.Println("✗")
+					fmt.Printf("SDK 初始化失败: %v\n", err)
+					continue
+				}
+				_, err = alicloud.GetCallerIdentity(clients.STS)
+				if err != nil {
+					fmt.Println("✗")
+					fmt.Printf("凭证验证失败: %v\n", err)
+					retry, retryErr := prompter.PromptConfirm("重试?")
+					if retryErr != nil {
+						return retryErr
+					}
+					if !retry {
+						return nil
+					}
+					continue
+				}
+				fmt.Println("✓")
+
+				// 保存
+				cred := &config.Credentials{
+					AccessKeyID:     accessKeyID,
+					AccessKeySecret: accessKeySecret,
+					Region:          region,
+				}
+				if err := config.SaveCredentials(cred); err != nil {
+					return err
+				}
+
+				stateDir, _ := config.GetStateDir()
+				fmt.Printf("配置已保存到 %s/credentials\n", stateDir)
+				return nil
+			}
+		},
+	}
+}
+
 func newDeployCmd() *cobra.Command {
 	var force bool
 
@@ -54,7 +146,7 @@ func newDeployCmd() *cobra.Command {
 		Short: "部署 OpenCode 到阿里云 ECS",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// 加载阿里云配置
-			cfg, err := alicloud.LoadConfigFromEnv()
+			cfg, err := alicloud.LoadConfig()
 			if err != nil {
 				return fmt.Errorf("阿里云配置错误: %w", err)
 			}
@@ -114,7 +206,7 @@ func newDestroyCmd() *cobra.Command {
 		Use:   "destroy",
 		Short: "销毁所有云资源",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := alicloud.LoadConfigFromEnv()
+			cfg, err := alicloud.LoadConfig()
 			if err != nil {
 				return fmt.Errorf("阿里云配置错误: %w", err)
 			}

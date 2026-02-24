@@ -9,6 +9,7 @@ import (
 	ecsclient "github.com/alibabacloud-go/ecs-20140526/v4/client"
 	stsclient "github.com/alibabacloud-go/sts-20150401/v2/client"
 	vpcclient "github.com/alibabacloud-go/vpc-20160428/v6/client"
+	"github.com/hwuu/cloudcode/internal/config"
 )
 
 const (
@@ -17,16 +18,58 @@ const (
 	EnvAccessSecret = "ALICLOUD_ACCESS_KEY_SECRET"
 )
 
-// Config 阿里云 SDK 认证配置，从环境变量加载
+// Config 阿里云 SDK 认证配置
 type Config struct {
 	AccessKeyID     string
 	AccessKeySecret string
 	RegionID        string
 }
 
-// LoadConfigFromEnv 从环境变量加载阿里云配置。
-// 必须设置 ALICLOUD_ACCESS_KEY_ID 和 ALICLOUD_ACCESS_KEY_SECRET，
-// ALICLOUD_REGION 可选（默认 ap-southeast-1）。
+// LoadConfig 加载阿里云配置。
+// 优先级：环境变量 → ~/.cloudcode/credentials → 报错提示 cloudcode init。
+func LoadConfig() (*Config, error) {
+	// 优先从环境变量加载
+	accessKeyID := os.Getenv(EnvAccessKeyID)
+	accessKeySecret := os.Getenv(EnvAccessSecret)
+
+	if accessKeyID != "" && accessKeySecret != "" {
+		regionID := os.Getenv("ALICLOUD_REGION")
+		if regionID == "" {
+			regionID = DefaultRegion
+		}
+		return &Config{
+			AccessKeyID:     accessKeyID,
+			AccessKeySecret: accessKeySecret,
+			RegionID:        regionID,
+		}, nil
+	}
+
+	// 从 credentials 文件加载
+	cred, err := config.LoadCredentials()
+	if err != nil {
+		// 环境变量部分设置但不完整时，给出具体提示
+		if accessKeyID != "" || accessKeySecret != "" {
+			if accessKeyID == "" {
+				return nil, ErrMissingAccessKeyID
+			}
+			return nil, ErrMissingAccessKeySecret
+		}
+		return nil, ErrMissingConfig
+	}
+
+	regionID := cred.Region
+	if regionID == "" {
+		regionID = DefaultRegion
+	}
+
+	return &Config{
+		AccessKeyID:     cred.AccessKeyID,
+		AccessKeySecret: cred.AccessKeySecret,
+		RegionID:        regionID,
+	}, nil
+}
+
+// LoadConfigFromEnv 从环境变量加载阿里云配置（向后兼容）。
 func LoadConfigFromEnv() (*Config, error) {
 	accessKeyID := os.Getenv(EnvAccessKeyID)
 	accessKeySecret := os.Getenv(EnvAccessSecret)

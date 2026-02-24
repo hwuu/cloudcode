@@ -438,8 +438,12 @@ func (d *Deployer) DeployApp(ctx context.Context, state *config.State, cfg *Depl
 	d.printf("  ✓ 配置文件已渲染\n")
 
 	// 上传文件（将 ~/cloudcode 替换为绝对路径）
+	// --app 模式跳过 authelia 配置（密码哈希和 secrets 已在磁盘上）
 	uploadFiles := make(map[string][]byte)
 	for path, content := range files {
+		if cfg.Password == "" && strings.Contains(path, "authelia/") {
+			continue
+		}
 		remotePath := strings.Replace(path, "~/cloudcode", "/root/cloudcode", 1)
 		uploadFiles[remotePath] = content
 	}
@@ -536,7 +540,43 @@ func (d *Deployer) HealthCheck(ctx context.Context, state *config.State) error {
 }
 
 // Run 执行完整部署流程
-func (d *Deployer) Run(ctx context.Context, force bool) error {
+func (d *Deployer) Run(ctx context.Context, appOnly bool) error {
+	// --app 模式：仅重部署应用层
+	if appOnly {
+		state, err := d.loadState()
+		if err != nil {
+			return fmt.Errorf("未找到部署记录，请先运行 cloudcode deploy")
+		}
+		if !state.IsComplete() {
+			return fmt.Errorf("云资源不完整，请先运行 cloudcode deploy 完成部署")
+		}
+		if state.Status == "suspended" {
+			return fmt.Errorf("实例已停机，请先运行 cloudcode resume")
+		}
+
+		cfg := &DeployConfig{
+			Domain:   state.CloudCode.Domain,
+			Username: state.CloudCode.Username,
+			Email:    state.CloudCode.Username + "@localhost",
+		}
+
+		d.printf("重新部署应用层...\n")
+		d.printf("  域名: %s\n", cfg.Domain)
+		d.printf("  用户名: %s\n\n", cfg.Username)
+
+		if err := d.DeployApp(ctx, state, cfg); err != nil {
+			return err
+		}
+		if err := d.saveState(state); err != nil {
+			return err
+		}
+		if err := d.HealthCheck(ctx, state); err != nil {
+			d.printf("  ⚠ 健康检查失败: %v\n", err)
+		}
+		d.printf("\n✅ 应用层重部署完成\n")
+		return nil
+	}
+
 	// 阶段 1: 前置检查
 	if err := d.PreflightCheck(ctx); err != nil {
 		return err
@@ -552,10 +592,8 @@ func (d *Deployer) Run(ctx context.Context, force bool) error {
 	if state.Status == "running" {
 		d.printf("\n已有运行中的实例，无需重新部署。\n")
 		d.printf("  查看状态: cloudcode status\n")
-		d.printf("  重新部署应用层: cloudcode deploy --force\n")
-		if !force {
-			return nil
-		}
+		d.printf("  重新部署应用层: cloudcode deploy --app\n")
+		return nil
 	}
 	if state.Status == "suspended" {
 		return fmt.Errorf("实例已停机，请使用 cloudcode resume 恢复运行")
@@ -576,46 +614,18 @@ func (d *Deployer) Run(ctx context.Context, force bool) error {
 		}
 	}
 
-	if state.IsComplete() && !force {
-		d.printf("\n已检测到完整部署，使用 --force 重新部署应用层\n")
+	if state.IsComplete() {
+		d.printf("\n已检测到完整部署，使用 --app 重新部署应用层\n")
 		return nil
 	}
 
 	// 阶段 2: 交互配置
-	var cfg *DeployConfig
-	if force && state.CloudCode.Username != "" && state.CloudCode.Domain != "" {
-		// --force 且已有配置，复用现有配置，仅需重新输入密码
-		d.printf("\n[2/5] 使用现有配置:\n")
-		d.printf("  域名: %s\n", state.CloudCode.Domain)
-		d.printf("  用户名: %s\n", state.CloudCode.Username)
-
-		password, err := d.Prompter.PromptPassword("请输入管理员密码: ")
-		if err != nil {
-			return err
-		}
-		confirmPassword, err := d.Prompter.PromptPassword("请确认管理员密码: ")
-		if err != nil {
-			return err
-		}
-		if password != confirmPassword {
-			return fmt.Errorf("两次输入的密码不一致")
-		}
-
-		cfg = &DeployConfig{
-			Domain:   state.CloudCode.Domain,
-			Username: state.CloudCode.Username,
-			Password: password,
-			Email:    state.CloudCode.Username + "@localhost",
-		}
-	} else {
-		var err error
-		cfg, err = d.PromptConfig(ctx)
-		if err != nil {
-			return err
-		}
+	cfg, err := d.PromptConfig(ctx)
+	if err != nil {
+		return err
 	}
 
-	// 阶段 3: 创建云资源（--force 跳过）
+	// 阶段 3: 创建云资源
 	if !state.IsComplete() {
 		if err := d.CreateResources(ctx, state, cfg.SSHIP); err != nil {
 			return err

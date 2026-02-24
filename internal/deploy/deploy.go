@@ -455,12 +455,24 @@ func (d *Deployer) DeployApp(ctx context.Context, state *config.State, cfg *Depl
 	}
 	d.printf("  ✓ 配置文件已上传\n")
 
-	// docker compose pull（拉镜像可能较慢，单独执行）
-	pullCmd := "cd ~/cloudcode && docker compose pull"
-	pullCtx, pullCancel := context.WithTimeout(ctx, 15*time.Minute)
-	defer pullCancel()
-	if _, err := sshClient.RunCommand(pullCtx, pullCmd); err != nil {
-		return fmt.Errorf("拉取 Docker 镜像失败: %w", err)
+	// 逐个拉取 Docker 镜像（显示进度）
+	images := []struct {
+		name    string
+		service string
+	}{
+		{"Caddy", "caddy"},
+		{"Authelia", "authelia"},
+		{"Devbox", "devbox"},
+	}
+	for i, img := range images {
+		d.printf("  * 正在拉取 Docker 镜像 (%d/%d) %s...\n", i+1, len(images), img.name)
+		pullCmd := fmt.Sprintf("cd ~/cloudcode && docker compose pull %s", img.service)
+		pullCtx, pullCancel := context.WithTimeout(ctx, 10*time.Minute)
+		if _, err := sshClient.RunCommand(pullCtx, pullCmd); err != nil {
+			pullCancel()
+			return fmt.Errorf("拉取 %s 镜像失败: %w", img.name, err)
+		}
+		pullCancel()
 	}
 	d.printf("  ✓ Docker 镜像已拉取\n")
 

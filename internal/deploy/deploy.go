@@ -481,8 +481,8 @@ func (d *Deployer) DeployApp(ctx context.Context, state *config.State, cfg *Depl
 	}
 	d.printf("  ✓ Docker 镜像已拉取\n")
 
-	// docker compose up
-	upCmd := "cd ~/cloudcode && docker compose up -d"
+	// docker compose up（--force-recreate 确保配置变更生效）
+	upCmd := "cd ~/cloudcode && docker compose up -d --force-recreate"
 	upCtx, upCancel := context.WithTimeout(ctx, remote.DockerInstallTimeout)
 	defer upCancel()
 	if _, err := sshClient.RunCommand(upCtx, upCmd); err != nil {

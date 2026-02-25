@@ -106,7 +106,7 @@ func (p *Prompter) PromptConfirm(message string, defaultYes bool) (bool, error) 
 	}
 	result, err := p.Prompt(fmt.Sprintf("%s %s: ", message, hint))
 	if err != nil {
-		return defaultYes, err
+		return false, err
 	}
 	result = strings.ToLower(strings.TrimSpace(result))
 	if result == "" {

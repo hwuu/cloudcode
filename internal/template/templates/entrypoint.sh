@@ -5,7 +5,7 @@
 # ttyd 后台运行，崩溃自动重启
 # 注：脚本以 opencode 用户执行（Dockerfile 中 USER opencode）
 while true; do
-    ttyd --port 7681 --base-path /terminal /bin/bash
+    ttyd --writable --port 7681 --base-path /terminal /bin/bash
     sleep 1
 done &
 

@@ -12,14 +12,12 @@
   - [2.3 DNS 方案：为什么优先阿里云 DNS + nip.io 兜底](#23-dns-方案为什么优先阿里云-dns--nipio-兜底)
   - [2.4 按需使用：为什么选 ECS 停机而非磁盘快照](#24-按需使用为什么选-ecs-停机而非磁盘快照)
   - [2.5 跨版本快照兼容策略](#25-跨版本快照兼容策略)
-  - [2.6 状态存储：为什么用 OSS 而非本地文件](#26-状态存储为什么用-oss-而非本地文件)
 - [3. 组件设计](#3-组件设计)
   - [3.1 重命名 opencode → devbox](#31-重命名-opencode--devbox)
   - [3.2 浏览器 Web Terminal](#32-浏览器-web-terminal)
   - [3.3 自有域名 + 自动 DNS 更新](#33-自有域名--自动-dns-更新)
   - [3.4 按需使用 — suspend/resume + 可选快照](#34-按需使用--suspendresume--可选快照)
   - [3.5 cloudcode init — 统一配置管理](#35-cloudcode-init--统一配置管理)
-  - [3.6 OSS 状态管理与分布式锁](#36-oss-状态管理与分布式锁)
 - [4. 实现规划](#4-实现规划)
   - [4.1 优先级](#41-优先级)
   - [4.2 依赖关系](#42-依赖关系)
@@ -197,47 +195,6 @@ CloudCode 使用语义化版本号 `MAJOR.MINOR.PATCH`（如 `0.2.1`）：
   "username": "admin"
 }
 ```
-
-### 2.6 状态存储：为什么用 OSS 而非本地文件
-
-v0.1.x 将 state.json 存储在本地 `~/.cloudcode/`，存在以下问题：
-
-| 问题 | 说明 |
-|------|------|
-| **跨机器操作** | 用户可能在笔记本、台式机等多台机器上操作同一实例 |
-| **操作中断** | deploy/destroy/suspend 到一半断电，状态不一致 |
-| **并发冲突** | 多个终端同时操作，状态竞争 |
-| **孤儿资源** | 中途失败后资源泄露，无法恢复 |
-
-#### 2.6.1 方案对比
-
-| 方案 | 优点 | 缺点 |
-|------|------|------|
-| 本地文件 | 简单 | 无法跨机器，无锁机制 |
-| ECS 标签 | 无额外资源 | deploy 初期无 ECS；destroy 后丢失 |
-| **OSS bucket** | 全流程可用，支持条件写入作锁，跨机器共享 | 需创建额外资源（成本极低） |
-| 云数据库 | 功能完整 | 过于复杂，增加依赖 |
-| DNS TXT 记录 | 复用现有域名 | 不适合存大量状态，修改慢 |
-
-**决策**：使用 OSS bucket 存储状态。
-
-#### 2.6.2 选择 OSS 的理由
-
-1. **跨机器共享**：状态存储在云端，任意机器可访问
-2. **分布式锁**：OSS 支持条件写入（`If-None-Match: *`），天然适合分布式锁
-3. **全生命周期覆盖**：从 deploy 开始到 destroy 结束，状态始终可用
-4. **成本极低**：OSS 标准存储 ~0.12 元/GB/月，state.json 几 KB，费用可忽略
-5. **无需额外依赖**：用户已有阿里云账号，OSS 是同生态服务
-
-#### 2.6.3 本地 vs OSS 职责划分
-
-| 文件 | 存储 | 理由 |
-|------|------|------|
-| `credentials` | 本地 | 敏感信息（AccessKey） |
-| `ssh_key` | 本地 | 私钥，不应上传云端 |
-| `state.json` | OSS | 跨机器共享、分布式锁 |
-| `backup.json` | OSS | 跨机器共享 |
-| `history/*.json` | OSS | 审计追踪 |
 
 ---
 
@@ -970,30 +927,13 @@ region=ap-southeast-1
 
 #### 3.5.4 目录结构
 
-本地目录（仅存敏感信息）：
-
 ```
 ~/.cloudcode/
 ├── credentials     # AccessKeyID、AccessKeySecret、Region（权限 600）
-└── ssh_key         # SSH 私钥
+├── ssh_key         # SSH 私钥
+├── state.json      # 部署状态、资源 ID
+└── backup.json     # 快照元数据（可选）
 ```
-
-OSS bucket（状态共享）：
-
-```
-cloudcode-state-<account_id>/
-├── state.json          # 当前状态
-├── backup.json         # 快照元数据（可选）
-├── .lock               # 分布式锁（临时）
-└── history/            # 操作历史
-    ├── 2026-02-24T10-00-00.json
-    └── ...
-```
-
-**说明**：
-- OSS bucket 名称使用 `<account_id>` 后缀确保全局唯一
-- bucket 在首次 `cloudcode init` 时创建
-- bucket 权限为私有，仅账号持有者可访问
 
 #### 3.5.5 交互流程
 
@@ -1001,31 +941,26 @@ cloudcode-state-<account_id>/
 $ cloudcode init
 阿里云 Access Key ID: ********
 阿里云 Access Key Secret: ********
-默认区域 [ap-southeast-1]: 
+默认区域 [ap-southeast-1]:
 验证凭证... ✗ InvalidAccessKeyId
 重试? [Y/n]: y
 阿里云 Access Key ID: ********
 阿里云 Access Key Secret: ********
 默认区域 [ap-southeast-1]:
 验证凭证... ✓
-创建 OSS bucket (cloudcode-state-123456789)... ✓
 配置已保存到 ~/.cloudcode/credentials
 ```
 
 **init 完成的操作**：
 
 1. 调用 `GetCallerIdentity`（STS API）验证凭证有效性
-2. 创建 OSS bucket `cloudcode-state-<account_id>`（若已存在则跳过）
-3. 保存凭证到本地 `~/.cloudcode/credentials`
+2. 保存凭证到本地 `~/.cloudcode/credentials`
 
 **错误处理**：
 
 | 场景 | 行为 |
 |------|------|
 | 凭证无效 | 提示重试或退出 |
-| bucket 已存在 | 跳过创建，继续使用 |
-| bucket 名称冲突（其他账号） | 提示：bucket 已被占用，请使用其他区域 |
-| 无 OSS 权限 | 提示：请开通 OSS 服务或添加 AliyunOSSFullAccess 权限 |
 
 #### 3.5.6 修改文件
 

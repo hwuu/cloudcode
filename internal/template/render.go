@@ -75,6 +75,10 @@ func GetStaticFile(name string) ([]byte, error) {
 
 // RenderAll 渲染所有文件，返回 ECS 目标路径 → 内容 的映射
 func RenderAll(data *TemplateData) (map[string][]byte, error) {
+	if data.Version == "" {
+		data.Version = "latest"
+	}
+
 	result := make(map[string][]byte)
 
 	// 文件映射：模板源文件 → ECS 目标路径（参考 design-oc.md 5.1.6）

@@ -1046,6 +1046,8 @@ v0.2.0 对月费用的影响：
 
 ## 变更记录
 
+- v1.14 (2026-02-25): 移除 OSS 状态管理内容（推迟到 v0.3）；opencode/ttyd 工作目录改为 ~/workspace；PromptConfirm 出错时返回 false；Version 为空时 fallback 到 latest；Docker CI paths 加入 entrypoint.sh；ttyd 加 --writable；docker compose up 加 --force-recreate；/terminal 路由匹配修复
+
 - v1.13 (2026-02-25): 实现反馈更新 — `--force` 移除，改为 `deploy --app`（仅重部署应用层，零交互）；快照恢复零交互（域名/用户名从 backup.json 读取，Authelia 配置保留磁盘版本避免 encryption key 不匹配）；PromptConfirm 统一接口并明确默认值原则（用户主动操作默认 Y，不可逆操作默认 N）；destroy 默认保留快照；suspended/destroyed 状态下 ssh/exec/status 等命令友好提示；ECSAPI 新增镜像方法（快照→镜像→ECS 流程）；3.4.5 流程图更新
 
 - v1.12 (2026-02-24): suspend/resume 流程图补充取消分支，与 destroy 流程图保持一致

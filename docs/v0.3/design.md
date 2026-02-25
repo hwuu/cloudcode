@@ -100,11 +100,13 @@ v0.2.x 将 state.json 存储在本地 `~/.cloudcode/`，在实际使用中存在
 |--------|------|----------|
 | `deploying` | 部署中 | `running`（成功），失败时保持 `deploying`（从断点恢复） |
 | `running` | 运行中 | `suspending`, `destroying` |
-| `suspending` | 停机中 | `suspended`, `running`（失败） |
+| `suspending` | 停机中 | `suspended`（成功），失败时回退到 `running` |
 | `suspended` | 已停机 | `resuming`, `destroying` |
-| `resuming` | 恢复中 | `running`, `suspended`（失败） |
+| `resuming` | 恢复中 | `running`（成功），失败时回退到 `suspended` |
 | `destroying` | 销毁中 | `destroyed`（成功），失败时回退到 `previous_status` |
-| `destroyed` | 已销毁（有快照） | `deploying`（从快照恢复） |
+| `destroyed` | 已销毁（有快照） | `deploying`（从快照恢复）；无快照时直接删除 state.json |
+
+**`previous_status` 字段**：进入 `destroying` 状态时，将当前 status（`running` 或 `suspended`）保存到 `previous_status`。destroy 失败时根据此字段回退状态。其他过渡状态（deploying/suspending/resuming）失败时回退目标固定，不需要此字段。
 
 **State Transition Diagram**:
 
@@ -264,6 +266,7 @@ type Lock struct {
 }
 
 // AcquireLock 获取锁（原子操作：不存在才写入）
+// 调用方应先检查锁是否过期：过期锁通过 ForceAcquireLock 接管，未过期锁提示用户选择强制接管
 func AcquireLock(ossClient OSSClient, lock Lock) error {
     body, _ := json.Marshal(lock)
     _, err := ossClient.PutObject(".lock", body,
@@ -414,11 +417,12 @@ func RenewLock(ossClient OSSClient, clientID string) error {
 ```
 1. 从 OSS 读 state
 2. 获取锁
-3. 写 OSS state (status: destroying)
+3. 写 OSS state (status: destroying, previous_status: 当前状态)
 4. 保留快照？
    - 是：创建快照 → 写 OSS backup.json
    - 否：删除 OSS backup.json（若存在）
 5. 删除资源
+   - 若失败：写 OSS state (status: previous_status)，释放锁，返回错误
 6. 保留快照？
    - 是：写 OSS state (status: destroyed)
    - 否：删除 OSS state.json
@@ -434,8 +438,8 @@ func RenewLock(ossClient OSSClient, clientID string) error {
 重启后执行 cloudcode deploy：
 1. 从 OSS 读 state → status: deploying
 2. 检查锁：
-   - 有锁且 started_at > 10 分钟前 → 提示"上次部署未完成，是否接管？"
-   - 无锁或锁过期 → 自动继续
+   - 有锁且未过期（started_at ≤ 15 分钟前）→ 提示"操作进行中，是否强制接管？"
+   - 有锁且已过期（started_at > 15 分钟前）→ 自动接管继续
 3. 根据 state 中已有资源，跳过已创建的步骤
 4. 继续未完成的部署
 ```
@@ -660,6 +664,7 @@ v0.2 用户升级到 v0.3 时，需要将本地 state.json 迁移到 OSS：
 
 ## 变更记录
 
+- v1.4 (2026-02-25): 第三轮 Review 修复 — 锁过期检测时间统一为 15 分钟；补充 previous_status 设置时机说明；destroyed 状态补充无快照时删除 state.json；suspending/resuming 失败路径写法与 destroying 统一；destroy 流程补充失败回退分支；AcquireLock 补充过期锁处理策略说明
 - v1.3 (2026-02-25): 第二轮 Review 修复 — 状态表 deploying 失败描述统一为保持 deploying；destroying 失败回退增加 previous_status 字段；GetLockWithETag 处理 JSON 解析错误；RenewLock 条件写入失败返回 ErrNotOwner；ForceAcquireLock 检查 delete 错误；续期失败明确通过 context 取消 + 保留 state + 锁自然过期
 - v1.2 (2026-02-25): Review 修复 — ForceAcquireLock/ReleaseLock 改用条件写入（IfNoneMatch/IfMatch）解决竞态；新增锁续期机制（5 分钟间隔，15 分钟过期）；去掉 partial state，deploying 失败保持 deploying 状态从断点恢复；状态图补充 destroying 失败回退路径；deploy 分阶段保存明确"先创建资源再写 OSS"策略；迁移流程加分布式锁+双重检查；补充 resume 中断恢复场景；history 清理改用 OSS 生命周期规则；去掉 --local 降级模式；修复路径不一致（统一用 .lock）
 - v1.1 (2026-02-24): 补充状态转换图失败分支；锁实现增加 client_id 验证和强制接管；分阶段保存替代增量保存；补充历史记录清理机制（30 天/100 条）；补充 v0.2 升级迁移逻辑；补充 deploy 幂等性增强（验证云上资源是否真实存在）

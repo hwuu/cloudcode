@@ -40,7 +40,7 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | \
     && rm -rf /var/lib/apt/lists/*
 
 USER opencode
-WORKDIR /home/opencode
+WORKDIR /home/opencode/workspace
 
 ARG OPENCODE_VERSION=latest
 RUN ARCH=$(case "$TARGETARCH" in amd64) echo "x64" ;; arm64) echo "arm64" ;; *) echo "$TARGETARCH" ;; esac) && \

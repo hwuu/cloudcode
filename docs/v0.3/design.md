@@ -119,48 +119,49 @@ v0.2.x 将 state.json 存储在本地 `~/.cloudcode/`，在实际使用中存在
                               | [deploying]   | <---------------------+
                               +---------------+                       |
                                    |        |                         |
-                            success|        |failed                   |
-                                   v        v                         |
-                          +---------------+ +---------------+         |
-                          |  [running]    | |[partial state]|         |
-                          +---------------+ +---------------+         |
-                                    |                                 |
-                             suspend|                                 |
-                                    |                                 |
-                                    v                                 |
-                          +---------------+                           |
-                          | [suspending]  |                           |
-                          +---------------+                           |
-                               |        |                             |
-                        success|        |failed                       |
-                               v        v                             |
-                      +---------------+ +---------------+             |
-                      | [suspended]   | |  [running]    |             |
-                      +---------------+ +---------------+             |
-                                |                                     |
-                          resume|                                     |
-                                |                                     |
-                                v                                     |
-                      +---------------+                               |
-                      | [resuming]    |                               |
-                      +---------------+                               |
-                           |       |                                  |
-                    success|       |failed                            |
-                           v       v                                  |
-                  +---------------+ +---------------+                 |
-                  |  [running]    | | [suspended]   |                 |
-                  +---------------+ +---------------+                 |
+                            success|        |failed(保留已创建资源,    |
+                                   |        | 状态仍为 deploying,     |
+                                   |        | 下次 deploy 从断点恢复) |
+                                   v        |                         |
+                          +---------------+ |                         |
+                          |  [running]    | |                         |
+                          +---------------+ |                         |
+                               |       |    |                         |
+                        suspend|  destroy   |                         |
+                               v       |    |                         |
+                      +---------------+ |   |                         |
+                      | [suspending]  | |   |                         |
+                      +---------------+ |   |                         |
+                           |        |   |   |                         |
+                    success|        |failed  |                        |
+                           v        v   |   |                         |
+                  +---------------+ +---+---+---+                     |
+                  | [suspended]   | |  [running] |                    |
+                  +---------------+ +------------+                    |
+                       |       |                                      |
+                 resume|  destroy                                     |
+                       v       |                                      |
+                  +---------------+                                   |
+                  | [resuming]    |                                   |
+                  +---------------+                                   |
+                       |       |                                      |
+                success|       |failed                                |
+                       v       v                                      |
+              +---------------+ +---------------+                     |
+              |  [running]    | | [suspended]   |                     |
+              +---------------+ +---------------+                     |
                                                                       |
   [running] or [suspended]                                            |
          |                                                            |
-    destroy (keep snapshot)                                           |
+    destroy                                                           |
          v                                                            |
   +---------------+                                                   |
   | [destroying]  |                                                   |
   +---------------+                                                   |
-         |                                                            |
-    success                                                           |
-         v                                                            |
+       |        |                                                     |
+  success|      |failed(回退到之前状态:                                |
+       |        | running 或 suspended)                               |
+       v        |                                                     |
   +---------------+                                                   |
   | [destroyed]   |                                                   |
   +---------------+                                                   |
@@ -168,6 +169,8 @@ v0.2.x 将 state.json 存储在本地 `~/.cloudcode/`，在实际使用中存在
    deploy from snapshot                                               |
          +------------------------------------------------------------+
 ```
+
+**deploying 失败处理**：deploy 失败时状态保持 `deploying`，已创建的资源 ID 保留在 state 中。下次执行 `cloudcode deploy` 时检测到 `deploying` 状态，提示用户继续或放弃（放弃则清理已创建资源）。
 
 #### 3.1.2 OSS 文件结构
 
@@ -242,69 +245,101 @@ cloudcode-state-<account_id>/
 ```
 
 **历史记录清理机制**：
-- 每次写入新历史时，检查 `history/` 目录
-- 超过 30 天的记录自动删除
-- 最多保留 100 条记录（按时间排序，旧记录先删）
+- 使用 OSS 生命周期规则自动清理，不在应用层处理
+- init 创建 bucket 时配置生命周期规则：`history/` 前缀下的对象 30 天后自动删除
+- 避免多客户端并发清理的竞态问题
 
 #### 3.1.3 分布式锁实现
 
-OSS 支持条件写入，用于实现分布式锁：
+OSS 支持条件写入（`If-None-Match: *`）和条件删除（`If-Match: <ETag>`），用于实现分布式锁。
+
+**锁文件路径**：`.lock`（bucket 根目录）
 
 ```go
 type Lock struct {
     Operation string    `json:"operation"`
-    StartedAt  time.Time `json:"started_at"`
-    ClientID   string    `json:"client_id"`  // 客户端唯一标识（hostname 或随机 UUID）
+    StartedAt time.Time `json:"started_at"`
+    ClientID  string    `json:"client_id"`  // hostname + PID，确保唯一
 }
 
-// 获取锁（不存在才写入）
+// AcquireLock 获取锁（原子操作：不存在才写入）
 func AcquireLock(ossClient OSSClient, lock Lock) error {
     body, _ := json.Marshal(lock)
-    _, err := ossClient.PutObject("state/.lock", body,
-        oss.PutObjectOptions{IfNoneMatch: "*"})  // 关键：不存在才写入
-    if err != nil && err.Code == "PreconditionFailed" {
+    _, err := ossClient.PutObject(".lock", body,
+        oss.IfNoneMatch("*"))  // 原子：不存在才写入
+    if isConditionFailed(err) {
         return ErrLockConflict
     }
     return err
 }
 
-// 释放锁（只能释放自己持有的锁）
+// ReleaseLock 释放锁（原子操作：用 ETag 条件删除，避免误删他人锁）
 func ReleaseLock(ossClient OSSClient, clientID string) error {
-    lock, err := GetLock(ossClient)
+    lock, etag, err := GetLockWithETag(ossClient)
     if err != nil {
         return err
     }
-    if lock != nil && lock.ClientID != clientID {
-        return ErrNotOwner  // 不是自己的锁，不能释放
+    if lock == nil {
+        return nil  // 锁已不存在
     }
-    return ossClient.DeleteObject("state/.lock")
+    if lock.ClientID != clientID {
+        return ErrNotOwner
+    }
+    // 条件删除：ETag 匹配才删除，防止 Get→Delete 之间锁被其他客户端修改
+    return ossClient.DeleteObject(".lock", oss.IfMatch(etag))
 }
 
-// 强制接管（删除任何锁）
+// ForceAcquireLock 强制接管（先删后写，用 IfNoneMatch 保证写入原子性）
 func ForceAcquireLock(ossClient OSSClient, lock Lock) error {
-    // 先删除可能存在的旧锁
-    ossClient.DeleteObject("state/.lock")
-    // 写入新锁
+    ossClient.DeleteObject(".lock")  // 尽力删除旧锁
     body, _ := json.Marshal(lock)
-    _, err := ossClient.PutObject("state/.lock", body, nil)
+    _, err := ossClient.PutObject(".lock", body,
+        oss.IfNoneMatch("*"))  // 原子写入，若其他客户端抢先则失败
+    if isConditionFailed(err) {
+        return ErrLockConflict  // 其他客户端在 Delete→Put 之间抢先获取了锁
+    }
     return err
 }
 
-// 检查锁状态
-func GetLock(ossClient OSSClient) (*Lock, error) {
-    body, err := ossClient.GetObject("state/.lock")
-    if err != nil && err.Code == "NoSuchKey" {
-        return nil, nil  // 无锁
+// GetLockWithETag 读取锁及其 ETag（用于条件删除）
+func GetLockWithETag(ossClient OSSClient) (*Lock, string, error) {
+    body, etag, err := ossClient.GetObjectWithETag(".lock")
+    if isNotFound(err) {
+        return nil, "", nil
+    }
+    if err != nil {
+        return nil, "", err
     }
     var lock Lock
     json.Unmarshal(body, &lock)
-    return &lock, nil
+    return &lock, etag, nil
+}
+```
+
+**锁续期机制**：
+
+长操作（如 deploy）可能超过锁超时时间。持锁期间启动后台 goroutine 定期续期：
+
+```go
+// RenewLock 续期：更新 started_at，保持锁有效
+// 调用方在获取锁后启动 goroutine，每 5 分钟调用一次
+func RenewLock(ossClient OSSClient, clientID string) error {
+    lock, etag, err := GetLockWithETag(ossClient)
+    if err != nil || lock == nil || lock.ClientID != clientID {
+        return ErrNotOwner
+    }
+    lock.StartedAt = time.Now()
+    body, _ := json.Marshal(lock)
+    // 条件写入：ETag 匹配才更新，防止覆盖他人锁
+    _, err = ossClient.PutObject(".lock", body, oss.IfMatch(etag))
+    return err
 }
 ```
 
 **锁超时机制**：
-- 锁的 `started_at` 超过 30 分钟视为过期
-- 过期锁可被其他客户端自动接管（先删除旧锁，再写入新锁）
+- 锁的 `started_at` 超过 15 分钟视为过期（续期间隔 5 分钟，3 次未续期即过期）
+- 过期锁可被其他客户端自动接管（通过 `ForceAcquireLock`）
+- 续期失败时操作应中止，避免无锁状态下继续修改资源
 
 #### 3.1.4 操作流程（带锁）
 
@@ -337,9 +372,10 @@ func GetLock(ossClient OSSClient) (*Lock, error) {
 ```
 
 **分阶段保存策略**：
-- 每个资源类型创建完成后立即保存一次（VPC、VSwitch、SG、ECS、EIP、应用）
-- 避免频繁写入，但仍能在每个阶段失败后从断点恢复
-- 与其"每步增量保存"，不如"分阶段保存"，减少 OSS 请求次数
+- 每个资源创建完成后立即写入 OSS state（VPC、VSwitch、SG、ECS、EIP、应用）
+- **先创建资源，再写 OSS**：若 OSS 写入失败但资源已创建，下次恢复时通过幂等性检查跳过已存在的资源
+- 若 OSS 写入失败，操作中止并提示用户重试（已创建的资源不回滚，下次 deploy 从断点恢复）
+- 阿里云 API 本身具备幂等性：重复创建同名 VPC/安全组等会返回已存在的资源 ID，不会重复创建
 
 **suspend 流程**：
 
@@ -417,6 +453,16 @@ func GetLock(ossClient OSSClient) (*Lock, error) {
    - Running → 恢复 state (status: running)，提示用户重新 suspend
 ```
 
+**场景：resume 到一半断电**
+
+```
+重启后执行 cloudcode status：
+1. 从 OSS 读 state → status: resuming
+2. 检查 ECS 实际状态：
+   - Running → 更新 state (status: running)
+   - Stopped → 恢复 state (status: suspended)，提示用户重新 resume
+```
+
 #### 3.1.6 并发控制
 
 **多终端并发场景**：
@@ -465,12 +511,16 @@ if state 中有 vpc_id:
 
 | 场景 | 处理 |
 |------|------|
-| suspend 到一半断电 | 重启后检测 status: suspending，提示恢复或强制接管 |
-| resume 到一半断电 | 重启后检测 status: resuming，检查 ECS 实际状态 |
-| destroy 不成功 | 保留 state，记录失败原因，支持重试 |
-| 多进程并发 | 分布式锁 + 状态检查 + 强制接管选项 |
-| 锁过期 | 超过 30 分钟的锁视为过期，允许自动接管 |
-| OSS 不可用 | 提示用户等待或使用 --local 降级为本地模式（只读操作） |
+| suspend 到一半断电 | 重启后检测 status: suspending，查询 ECS 实际状态修正 |
+| resume 到一半断电 | 重启后检测 status: resuming，查询 ECS 实际状态修正 |
+| deploy 到一半断电 | 重启后检测 status: deploying，从断点恢复（幂等性保证） |
+| destroy 不成功 | 保留 state，记录失败原因，回退到之前状态，支持重试 |
+| 多进程并发 | 分布式锁（IfNoneMatch 原子写入）+ 状态检查 + 强制接管选项 |
+| 锁过期 | 超过 15 分钟未续期视为过期，允许自动接管 |
+| 续期失败 | 操作中止，避免无锁状态下继续修改资源 |
+| OSS 写入失败 | 操作中止，已创建资源保留，下次从断点恢复 |
+| OSS 不可用 | 报错退出（v0.3 不支持降级到本地模式） |
+| 云上资源被手动删除 | deploy 幂等性检查发现资源不存在，重新创建 |
 
 #### 3.1.9 修改文件
 
@@ -563,23 +613,26 @@ v0.2 用户升级到 v0.3 时，需要将本地 state.json 迁移到 OSS：
 
 ```
 首次执行 cloudcode（任意命令）：
-1. 读取本地 ~/.cloudcode/state.json
-2. 若本地 state 存在且 OSS state 不存在：
+1. 检查 OSS bucket 是否存在（不存在则提示 cloudcode init）
+2. 读取本地 ~/.cloudcode/state.json
+3. 若本地 state 存在且 OSS state 不存在：
    - 提示用户："检测到 v0.2 部署记录，是否迁移到云端？[Y/n]"
    - 用户确认后：
-     a. 获取锁
-     b. 写入 OSS state.json
-     c. 备份本地 state.json 到 state.json.bak
-     d. 释放锁
-   - 用户拒绝：继续使用本地 state（降级模式）
-3. 若本地 state 和 OSS state 都存在：
-   - 以 OSS state 为准（提示用户本地记录将被忽略）
-4. 若只有 OSS state 不存在本地：
-   - 正常初始化
+     a. 获取锁（防止多台机器同时迁移）
+     b. 再次检查 OSS state 是否存在（双重检查，防止获取锁期间其他机器已迁移）
+     c. 若 OSS state 仍不存在：写入 OSS state.json + backup.json（若有）
+     d. 备份本地 state.json 到 state.json.bak
+     e. 释放锁
+   - 用户拒绝：报错退出（v0.3 不支持纯本地模式）
+4. 若本地 state 和 OSS state 都存在：
+   - 以 OSS state 为准，提示用户本地记录已过时
+5. 若只有 OSS state（无本地）：
+   - 正常使用
 ```
 
-**迁移前提条件**：
-- 迁移期间不能有其他机器同时操作
+**迁移注意事项**：
+- 迁移使用分布式锁 + 双重检查，防止多台机器同时迁移导致覆盖
+- v0.3 不支持降级到纯本地模式，拒绝迁移则无法继续操作
 - 建议用户先在所有机器上升级到 v0.3，再执行第一次操作
 
 ---
@@ -599,5 +652,6 @@ v0.2 用户升级到 v0.3 时，需要将本地 state.json 迁移到 OSS：
 
 ## 变更记录
 
+- v1.2 (2026-02-25): Review 修复 — ForceAcquireLock/ReleaseLock 改用条件写入（IfNoneMatch/IfMatch）解决竞态；新增锁续期机制（5 分钟间隔，15 分钟过期）；去掉 partial state，deploying 失败保持 deploying 状态从断点恢复；状态图补充 destroying 失败回退路径；deploy 分阶段保存明确"先创建资源再写 OSS"策略；迁移流程加分布式锁+双重检查；补充 resume 中断恢复场景；history 清理改用 OSS 生命周期规则；去掉 --local 降级模式；修复路径不一致（统一用 .lock）
 - v1.1 (2026-02-24): 补充状态转换图失败分支；锁实现增加 client_id 验证和强制接管；分阶段保存替代增量保存；补充历史记录清理机制（30 天/100 条）；补充 v0.2 升级迁移逻辑；补充 deploy 幂等性增强（验证云上资源是否真实存在）
 - v1.0 (2026-02-24): 初始版本，包含 OSS 状态管理、分布式锁、中断恢复、操作历史

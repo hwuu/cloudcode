@@ -18,6 +18,8 @@
 curl -fsSL https://github.com/hwuu/cloudcode/releases/latest/download/install.sh | bash
 ```
 
+安装脚本会自动配置 bash/zsh 命令补全。
+
 或从 [Releases](https://github.com/hwuu/cloudcode/releases) 下载对应平台二进制。
 
 ## 前置条件
@@ -75,12 +77,16 @@ cloudcode status
 ### 运维命令
 
 ```bash
+cloudcode version                      # 显示版本信息
 cloudcode otc                          # 读取 Authelia 一次性验证码（首次注册 Passkey 用）
 cloudcode logs                         # 查看所有容器日志（默认最后 50 行）
 cloudcode logs authelia                # 查看指定容器日志
+cloudcode logs -n 100                  # 显示最后 100 行
 cloudcode logs -f                      # 实时跟踪日志
 cloudcode ssh                          # SSH 登录到 ECS 宿主机
 cloudcode ssh devbox                   # 进入 devbox 容器
+cloudcode ssh authelia                 # 进入 authelia 容器
+cloudcode ssh caddy                    # 进入 caddy 容器
 cloudcode exec devbox opencode -v      # 在容器内执行命令
 ```
 

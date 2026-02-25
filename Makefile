@@ -1,4 +1,4 @@
-VERSION ?= dev-$(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
+VERSION ?= $(shell git rev-parse --abbrev-ref HEAD 2>/dev/null | tr '/' '-')
 COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "none")
 DATE    ?= $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 LDFLAGS := -s -w \

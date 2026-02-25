@@ -69,7 +69,7 @@ func TestRenderCaddyfile(t *testing.T) {
 	if !strings.Contains(s, "reverse_proxy devbox:7681") {
 		t.Error("Caddyfile should contain ttyd reverse proxy")
 	}
-	if !strings.Contains(s, "handle /terminal/*") {
+	if !strings.Contains(s, "path /terminal /terminal/*") {
 		t.Error("Caddyfile should contain /terminal route")
 	}
 	if !strings.Contains(s, "forward_auth") {

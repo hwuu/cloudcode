@@ -7,6 +7,7 @@ on:
       - 'hwuu/**'
     paths:
       - 'internal/template/templates/Dockerfile.devbox'
+      - 'internal/template/templates/entrypoint.sh'
       - '.github/workflows/docker.yml'
 
 permissions:

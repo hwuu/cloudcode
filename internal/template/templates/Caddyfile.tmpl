@@ -12,7 +12,8 @@ auth.{{ .Domain }}:8443 {
     # Web Terminal（需认证）
     # 使用 handle 而非 handle_path，保留 /terminal 前缀，
     # 因为 ttyd 配置了 --base-path /terminal，期望收到带前缀的请求
-    handle /terminal/* {
+    @terminal path /terminal /terminal/*
+    handle @terminal {
         forward_auth authelia:9091 {
             uri /api/authz/forward-auth
             copy_headers Remote-User Remote-Groups Remote-Name Remote-Email
@@ -37,7 +38,8 @@ auth.{{ .Domain }}:8443 {
 }
 
 {{ .Domain }}:8443 {
-    handle /terminal/* {
+    @terminal path /terminal /terminal/*
+    handle @terminal {
         forward_auth authelia:9091 {
             uri /api/authz/forward-auth
             copy_headers Remote-User Remote-Groups Remote-Name Remote-Email
